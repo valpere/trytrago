@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/valpere/trytrago/domain/logging"
 )
 
 // Server-specific flags
@@ -75,7 +76,22 @@ func init() {
 
 // runServer implements the server command
 func runServer() error {
+	log.Info("starting server",
+		logging.Int("http_port", httpPort),
+		logging.Int("grpc_port", grpcPort),
+		logging.String("environment", environment),
+	)
+
+	// // If an error occurs
+	// if err := someOperation(); err != nil {
+	// 	log.Error("failed to perform operation",
+	// 		logging.Error(err),
+	// 		logging.String("component", "server"),
+	// 	)
+	// 	return err
+	// }
+
 	// TODO: Implement server startup logic
-	log.Info("Starting trytrago server")
+
 	return nil
 }
