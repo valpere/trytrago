@@ -22,13 +22,13 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/valpere/trytrago/domain"
+	"github.com/valpere/trytrago/domain/logging"
 )
 
-// Version information will be injected during build
 var (
-	Version   = "dev"
-	CommitSHA = "none"
-	BuildTime = "unknown"
+	// Global logger instance
+	log logging.Logger
 )
 
 // Global flags that apply across all commands
@@ -49,7 +49,7 @@ var rootCmd = &cobra.Command{
 	database backends and can handle large-scale dictionaries efficiently.
 	
 	Complete documentation is available at https://github.com/valpere/trytrago`,
-	Version: Version,
+	Version: domain.Version,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	// Run: func(cmd *cobra.Command, args []string) { },
@@ -64,9 +64,29 @@ func Execute() {
 	}
 }
 
+func initLogging() {
+	opts := logging.NewDefaultOptions()
+
+	// Apply configuration from viper/flags
+	opts.Level = logging.Level(viper.GetString("logging.level"))
+	opts.Format = logging.Format(viper.GetString("logging.format"))
+	opts.FilePath = viper.GetString("logging.file_path")
+	opts.Environment = viper.GetString("environment")
+
+	// Create the logger
+	logger, err := logging.NewLogger(opts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing logger: %v\n", err)
+		os.Exit(1)
+	}
+
+	log = logger
+}
+
 func init() {
 	// Initialize cobra and viper integration
-	cobra.OnInitialize(initConfig)
+	// Add initialization of logger after viper config is loaded
+	cobra.OnInitialize(initConfig, initLogging)
 
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
