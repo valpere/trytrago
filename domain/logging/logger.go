@@ -98,6 +98,10 @@ func Int(key string, value int) zapcore.Field {
 	return zap.Int(key, value)
 }
 
+func Bool(key string, value bool) zapcore.Field {
+	return zap.Bool(key, value)
+}
+
 func Error(err error) zapcore.Field {
 	return zap.Error(err)
 }

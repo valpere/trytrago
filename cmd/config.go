@@ -3,7 +3,9 @@ package cmd
 import "github.com/spf13/cobra"
 
 var (
-	outputFormat string
+	// Global flags that apply across all commands
+	// TODO: find out how it interacts with version
+	outputFormatCfg string // Output format (yaml or json)
 )
 
 var configCmd = &cobra.Command{
@@ -16,7 +18,7 @@ var configCmd = &cobra.Command{
 }
 
 func init() {
-	configCmd.Flags().StringVar(&outputFormat, "format", "yaml", "Output format (yaml or json)")
+	configCmd.Flags().StringVar(&outputFormatCfg, "format", "yaml", "Output format (yaml or json)")
 
 	rootCmd.AddCommand(configCmd)
 }
