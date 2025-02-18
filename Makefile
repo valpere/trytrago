@@ -2,16 +2,17 @@
 PROJECT_NAME := trytrago
 MAIN_PACKAGE := github.com/valpere/$(PROJECT_NAME)
 BINARY_NAME := $(PROJECT_NAME)
+PROJECT_VERSION := v0.1.0
 
 # Get the current git version and commit
-VERSION ?= $(shell git describe --tags --always --dirty)
-COMMIT_SHA ?= $(shell git rev-parse --short HEAD)
+# GIT_VERSION ?= $(shell git describe --tags --always --dirty)
+GIT_COMMIT_SHA ?= $(shell git rev-parse --short HEAD)
 BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Go build flags
 LDFLAGS := -ldflags "\
-	-X $(MAIN_PACKAGE)/domain.Version=$(VERSION) \
-	-X $(MAIN_PACKAGE)/domain.CommitSHA=$(COMMIT_SHA) \
+	-X $(MAIN_PACKAGE)/domain.Version=$(PROJECT_VERSION) \
+	-X $(MAIN_PACKAGE)/domain.CommitSHA=$(GIT_COMMIT_SHA) \
 	-X $(MAIN_PACKAGE)/domain.BuildTime=$(BUILD_TIME)"
 
 # Environment variables

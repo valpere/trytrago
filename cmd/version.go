@@ -42,9 +42,6 @@ func init() {
 	// Define version-specific flags
 	versionCmd.Flags().StringVar(&outputFormat, "format", "text", "output format (text or json)")
 	versionCmd.Flags().BoolVar(&short, "short", false, "print only the version number")
-
-	// Log the registration of the version command
-	log.Debug("registered version command")
 }
 
 // runVersion implements the version command logic

@@ -92,6 +92,7 @@ func runServer() error {
 	// }
 
 	// TODO: Implement server startup logic
+	log.Info("Starting trytrago server")
 
 	return nil
 }

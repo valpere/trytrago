@@ -1,4 +1,3 @@
-// domain/version.go
 package domain
 
 import (
@@ -10,7 +9,7 @@ import (
 // Version information will be injected during build using ldflags
 var (
 	// Version represents the semantic version of the application
-	Version = "0.1.0"
+	Version = "dev"
 
 	// CommitSHA represents the Git commit hash used to build the program
 	CommitSHA = "none"
