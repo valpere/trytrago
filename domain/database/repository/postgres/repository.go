@@ -10,13 +10,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/valpere/trytrago/domain/database"
+	"github.com/valpere/trytrago/domain/database/repository"
 )
 
-type repository struct {
+type dbrepo struct {
 	db *gorm.DB
 }
 
-func NewRepository(ctx context.Context, opts database.Options) (database.Repository, error) {
+func NewRepository(ctx context.Context, opts repository.Options) (repository.Repository, error) {
 	// Construct DSN (Data Source Name)
 	dsn := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
@@ -48,7 +49,7 @@ func NewRepository(ctx context.Context, opts database.Options) (database.Reposit
 	sqlDB.SetConnMaxLifetime(opts.ConnMaxLifetime)
 
 	// Create repository instance
-	repo := &repository{db: db}
+	repo := &dbrepo{db: db}
 
 	// Verify connection
 	if err := repo.Ping(ctx); err != nil {
@@ -59,7 +60,23 @@ func NewRepository(ctx context.Context, opts database.Options) (database.Reposit
 }
 
 // Implement Repository interface methods
-func (r *repository) CreateEntry(ctx context.Context, entry *database.Entry) error {
+func (r *dbrepo) Ping(ctx context.Context) error {
+	sqlDB, err := r.db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.PingContext(ctx)
+}
+
+func (r *dbrepo) Close() error {
+	sqlDB, err := r.db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
+}
+
+func (r *dbrepo) CreateEntry(ctx context.Context, entry *database.Entry) error {
 	if entry.ID == uuid.Nil {
 		entry.ID = uuid.New()
 	}
@@ -67,7 +84,7 @@ func (r *repository) CreateEntry(ctx context.Context, entry *database.Entry) err
 	return r.db.WithContext(ctx).Create(entry).Error
 }
 
-func (r *repository) GetEntryByID(ctx context.Context, id uuid.UUID) (*database.Entry, error) {
+func (r *dbrepo) GetEntryByID(ctx context.Context, id uuid.UUID) (*database.Entry, error) {
 	var entry database.Entry
 	err := r.db.WithContext(ctx).
 		Preload("Meanings.Examples").
@@ -80,4 +97,27 @@ func (r *repository) GetEntryByID(ctx context.Context, id uuid.UUID) (*database.
 	return &entry, err
 }
 
-// ... implement other Repository interface methods ...
+// Abstract methods
+func (r *dbrepo) DeleteEntry(ctx context.Context, id uuid.UUID) error {
+	return nil
+}
+
+func (r *dbrepo) FindTranslations(ctx context.Context, word string, langID string) ([]database.Translation, error) {
+	return nil, nil
+}
+
+func (r *dbrepo) GetEntryHistory(ctx context.Context, entryID uuid.UUID) ([]database.ChangeHistory, error) {
+	return nil, nil
+}
+
+func (r *dbrepo) ListEntries(ctx context.Context, params repository.ListParams) ([]database.Entry, error) {
+	return nil, nil
+}
+
+func (r *dbrepo) RecordChange(ctx context.Context, change *database.ChangeHistory) error {
+	return nil
+}
+
+func (r *dbrepo) UpdateEntry(ctx context.Context, entry *database.Entry) error {
+	return nil
+}

@@ -1,4 +1,3 @@
-// domain/config.go
 package domain
 
 import (

@@ -12,8 +12,8 @@ import (
 
 // Flags specific to the version command
 var (
-	outputFormat string // Controls the output format (text, json)
-	short        bool   // Display just the version number
+	versionOutputFormat string // Controls the version output format (text, json)
+	short               bool   // Display just the version number
 )
 
 // versionCmd represents the version command
@@ -40,7 +40,7 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 
 	// Define version-specific flags
-	versionCmd.Flags().StringVar(&outputFormat, "format", "text", "output format (text or json)")
+	versionCmd.Flags().StringVar(&versionOutputFormat, "format", "text", "output format (text or json)")
 	versionCmd.Flags().BoolVar(&short, "short", false, "print only the version number")
 }
 
@@ -55,7 +55,7 @@ func runVersion(cmd *cobra.Command, args []string) error {
 
 	// Log that we're displaying version information
 	log.Debug("displaying version information",
-		logging.String("format", outputFormat),
+		logging.String("format", versionOutputFormat),
 		logging.Bool("short", short),
 	)
 
@@ -66,7 +66,7 @@ func runVersion(cmd *cobra.Command, args []string) error {
 	}
 
 	// Handle different output formats
-	switch outputFormat {
+	switch versionOutputFormat {
 	case "json":
 		// Create a map for JSON output to control field names
 		output := map[string]interface{}{
@@ -95,9 +95,9 @@ func runVersion(cmd *cobra.Command, args []string) error {
 
 	default:
 		log.Error("invalid output format",
-			logging.String("format", outputFormat),
+			logging.String("format", versionOutputFormat),
 		)
-		return fmt.Errorf("invalid output format: %s", outputFormat)
+		return fmt.Errorf("invalid output format: %s", versionOutputFormat)
 	}
 
 	return nil

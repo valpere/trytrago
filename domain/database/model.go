@@ -1,8 +1,10 @@
 package database
 
 import (
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // EntryType represents the type of dictionary entry
@@ -13,6 +15,18 @@ const (
 	CompoundWordType EntryType = "COMPOUND_WORD"
 	PhraseType       EntryType = "PHRASE"
 )
+
+type Product struct {
+	gorm.Model
+	Code  string
+	Price uint
+}
+
+type PartOfSpeech struct {
+	ID           uint      `gorm:"primarykey"`
+	PartOfSpeech string    `gorm:"type:varchar(50)"`
+	Meanings     []Meaning `gorm:"foreignKey:PartOfSpeechID"`
+}
 
 // Entry represents a dictionary entry
 type Entry struct {
@@ -27,14 +41,14 @@ type Entry struct {
 
 // Meaning represents a specific meaning of a dictionary entry
 type Meaning struct {
-	ID           uuid.UUID     `gorm:"type:uuid;primary_key"`
-	EntryID      uuid.UUID     `gorm:"type:uuid;index"`
-	PartOfSpeech string        `gorm:"type:varchar(50)"`
-	Description  string        `gorm:"type:text"`
-	Examples     []Example     `gorm:"foreignKey:MeaningID"`
-	Translations []Translation `gorm:"foreignKey:MeaningID"`
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID             uuid.UUID     `gorm:"type:uuid;primary_key"`
+	EntryID        uuid.UUID     `gorm:"type:uuid;index"`
+	PartOfSpeechId uuid.UUID     `gorm:"type:uuid;index"`
+	Description    string        `gorm:"type:text"`
+	Examples       []Example     `gorm:"foreignKey:MeaningID"`
+	Translations   []Translation `gorm:"foreignKey:MeaningID"`
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // Example represents usage examples for a meaning
