@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # TryTraGo Dictionary Server
+  trytrago:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trytrago
+    restart: unless-stopped
+    ports:
+      - "8080:8080"  # HTTP API
+      - "9090:9090"  # gRPC API
+    environment:
+      - TRYTRAGO_ENVIRONMENT=development
+      - TRYTRAGO_LOGGING_LEVEL=debug
+      - TRYTRAGO_LOGGING_FORMAT=console
+      - TRYTRAGO_DATABASE_TYPE=postgres
+      - TRYTRAGO_DATABASE_HOST=postgres
+      - TRYTRAGO_DATABASE_PORT=5432
+      - TRYTRAGO_DATABASE_NAME=trytrago
+      - TRYTRAGO_DATABASE_USER=postgres
+      - TRYTRAGO_DATABASE_PASSWORD=postgres
+      - TRYTRAGO_DATABASE_POOL_SIZE=20
+      - TRYTRAGO_DATABASE_MAX_IDLE_CONNS=10
+      - TRYTRAGO_DATABASE_MAX_OPEN_CONNS=100
+      - TRYTRAGO_AUTH_JWT_SECRET=development_secret_change_me_in_production
+      - TRYTRAGO_AUTH_TOKEN_EXPIRATION=24h
+    volumes:
+      - ./config.yaml:/app/config.yaml
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - trytrago-network
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: trytrago-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=trytrago
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - trytrago-network
+    command: postgres -c shared_buffers=256MB -c max_connections=500
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: trytrago-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - trytrago-network
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  # Database admin tool
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: trytrago-pgadmin
+    restart: unless-stopped
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@example.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - trytrago-network
+
+volumes:
+  postgres-data:
+  redis-data:
+  pgadmin-data:
+
+networks:
+  trytrago-network:
+    driver: bridge
