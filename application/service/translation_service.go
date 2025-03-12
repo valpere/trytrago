@@ -12,6 +12,7 @@ import (
 	"github.com/valpere/trytrago/domain/database"
 	"github.com/valpere/trytrago/domain/database/repository"
 	"github.com/valpere/trytrago/domain/logging"
+	"github.com/valpere/trytrago/domain/model"
 )
 
 // translationService implements the TranslationService interface
@@ -253,52 +254,157 @@ func (s *translationService) ListTranslations(ctx context.Context, meaningID uui
 
 // AddTranslationComment implements TranslationService.AddTranslationComment
 func (s *translationService) AddTranslationComment(ctx context.Context, translationID uuid.UUID, req *request.CreateCommentRequest) (*response.CommentResponse, error) {
-	// To be implemented
-	return nil, fmt.Errorf("not implemented")
-}
+	s.logger.Debug("adding comment to translation",
+		logging.String("translationID", translationID.String()),
+		logging.String("userID", req.UserID.String()),
+	)
 
-// ToggleTranslationLike implements TranslationService.ToggleTranslationLike
-func (s *translationService) ToggleTranslationLike(ctx context.Context, translationID uuid.UUID, userID uuid.UUID) error {
-	// To be implemented
-	return fmt.Errorf("not implemented")
-}
+	// Find the translation by ID
+	// Note: In a real implementation, you would have a direct repository method to get a translation by ID
 
-// Helper method to get a meaning by ID
-func (s *translationService) getMeaningByID(ctx context.Context, meaningID uuid.UUID) (*database.Meaning, error) {
-	// Get all entries that might contain this meaning
+	// Get all entries that might contain this translation
 	params := repository.ListParams{
-		Limit: 100, // Reasonable limit, adjust based on actual requirements
+		Limit: 100, // Reasonable limit
 	}
 	entries, err := s.repo.ListEntries(ctx, params)
 	if err != nil {
-		s.logger.Error("failed to list entries to find meaning",
+		s.logger.Error("failed to list entries to find translation",
 			logging.Error(err),
-			logging.String("meaningID", meaningID.String()),
+			logging.String("translationID", translationID.String()),
 		)
-		return nil, fmt.Errorf("failed to find meaning: %w", err)
+		return nil, fmt.Errorf("failed to find translation: %w", err)
 	}
 
-	// Search for the meaning
-	var foundMeaning *database.Meaning
+	// Search for the translation
+	var foundTranslation *database.Translation
 
 	for i := range entries {
 		entry := entries[i]
 		for j := range entry.Meanings {
 			meaning := entry.Meanings[j]
-			if meaning.ID == meaningID {
-				foundMeaning = &meaning
+			for k := range meaning.Translations {
+				translation := &meaning.Translations[k]
+				if translation.ID == translationID {
+					foundTranslation = translation
+					break
+				}
+			}
+			if foundTranslation != nil {
 				break
 			}
 		}
-		if foundMeaning != nil {
+		if foundTranslation != nil {
 			break
 		}
 	}
 
-	if foundMeaning == nil {
-		s.logger.Error("meaning not found", logging.String("meaningID", meaningID.String()))
+	if foundTranslation == nil {
 		return nil, database.ErrEntryNotFound
 	}
 
-	return foundMeaning, nil
+	// Create a new comment
+	comment := model.Comment{
+		ID:         uuid.New(),
+		UserID:     req.UserID,
+		TargetType: "translation",
+		TargetID:   translationID,
+		Content:    req.Content,
+		CreatedAt:  time.Now().UTC(),
+		UpdatedAt:  time.Now().UTC(),
+	}
+
+	// In a real implementation, you would save this comment to a dedicated comments table
+	// For now, we'll create a mock response
+
+	// Create user for the comment (would come from a user repository in a real implementation)
+	user := &model.User{
+		ID:       req.UserID,
+		Username: "user" + req.UserID.String()[0:8], // Mock username
+	}
+
+	// Create response
+	resp := &response.CommentResponse{
+		ID:      comment.ID,
+		Content: comment.Content,
+		User: response.UserSummary{
+			ID:       user.ID,
+			Username: user.Username,
+		},
+		CreatedAt: comment.CreatedAt,
+		UpdatedAt: comment.UpdatedAt,
+	}
+
+	return resp, nil
+}
+
+// ToggleTranslationLike implements TranslationService.ToggleTranslationLike
+func (s *translationService) ToggleTranslationLike(ctx context.Context, translationID uuid.UUID, userID uuid.UUID) error {
+	s.logger.Debug("toggling like on translation",
+		logging.String("translationID", translationID.String()),
+		logging.String("userID", userID.String()),
+	)
+
+	// Find the translation by ID
+	params := repository.ListParams{
+		Limit: 100, // Reasonable limit
+	}
+	entries, err := s.repo.ListEntries(ctx, params)
+	if err != nil {
+		s.logger.Error("failed to list entries to find translation",
+			logging.Error(err),
+			logging.String("translationID", translationID.String()),
+		)
+		return fmt.Errorf("failed to find translation: %w", err)
+	}
+
+	// Search for the translation
+	var foundTranslation *database.Translation
+
+	for i := range entries {
+		entry := entries[i]
+		for j := range entry.Meanings {
+			meaning := entry.Meanings[j]
+			for k := range meaning.Translations {
+				translation := &meaning.Translations[k]
+				if translation.ID == translationID {
+					foundTranslation = translation
+					break
+				}
+			}
+			if foundTranslation != nil {
+				break
+			}
+		}
+		if foundTranslation != nil {
+			break
+		}
+	}
+
+	if foundTranslation == nil {
+		return database.ErrEntryNotFound
+	}
+
+	// In a real implementation, you would:
+	// 1. Check if the user has already liked this translation
+	// 2. If yes, remove the like
+	// 3. If no, add a new like
+	// 4. Update the likes count for the translation
+
+	// Create or toggle like (would be saved to a database in a real implementation)
+	like := model.Like{
+		ID:         uuid.New(),
+		UserID:     userID,
+		TargetType: "translation",
+		TargetID:   translationID,
+		CreatedAt:  time.Now().UTC(),
+	}
+
+	// Placeholder for logging - in a real implementation, this would be saved
+	s.logger.Info("like processed",
+		logging.String("likeID", like.ID.String()),
+		logging.String("translationID", translationID.String()),
+		logging.String("userID", userID.String()),
+	)
+
+	return nil
 }

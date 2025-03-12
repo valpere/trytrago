@@ -13,7 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/valpere/trytrago/application/service"
-	"github.com/valpere/trytrago/domain/config"
+	"github.com/valpere/trytrago/domain"
 	"github.com/valpere/trytrago/domain/logging"
 	"github.com/valpere/trytrago/interface/api/rest"
 	"google.golang.org/grpc"
@@ -21,7 +21,7 @@ import (
 
 // Server is the main server that handles both HTTP and gRPC traffic
 type Server struct {
-	cfg          *config.Config
+	cfg          *domain.Config
 	logger       logging.Logger
 	entryService service.EntryService
 	transService service.TranslationService
@@ -36,7 +36,7 @@ type Server struct {
 
 // NewServer creates a new server instance
 func NewServer(
-	cfg *config.Config,
+	cfg *domain.Config,
 	logger logging.Logger,
 	entryService service.EntryService,
 	transService service.TranslationService,
