@@ -42,7 +42,8 @@ type UpdateMeaningRequest struct {
 
 // CreateCommentRequest contains data for creating a comment
 type CreateCommentRequest struct {
-	Content string `json:"content" binding:"required,min=1,max=500"`
+	Content string    `json:"content" binding:"required,min=1,max=500"`
+	UserID  uuid.UUID `json:"-"` // Set from authentication context, not from client
 }
 
 // FeedRequest contains parameters for retrieving a user's feed

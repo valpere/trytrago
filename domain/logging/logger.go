@@ -98,6 +98,10 @@ func Int(key string, value int) zapcore.Field {
 	return zap.Int(key, value)
 }
 
+func Int64(key string, value int64) zapcore.Field {
+	return zap.Int64(key, value)
+}
+
 func Bool(key string, value bool) zapcore.Field {
 	return zap.Bool(key, value)
 }
