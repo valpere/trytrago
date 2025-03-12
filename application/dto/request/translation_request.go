@@ -24,8 +24,7 @@ type ListTranslationsRequest struct {
 
 // TranslationCommentRequest contains data for adding a comment to a translation
 type TranslationCommentRequest struct {
-	Content string    `json:"content" binding:"required,min=1,max=500"`
-	UserID  uuid.UUID `json:"-"` // Set from authentication context, not from client
+	Content string `json:"content" binding:"required,min=1,max=500"`
 }
 
 // TranslationLikeRequest contains data for toggling a like on a translation

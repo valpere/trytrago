@@ -1,11 +1,17 @@
 package cmd
 
 import (
+	"context"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/valpere/trytrago/application/service"
+	"github.com/valpere/trytrago/domain"
+	"github.com/valpere/trytrago/domain/database/repository"
 	"github.com/valpere/trytrago/domain/logging"
+	"github.com/valpere/trytrago/infrastructure/migration"
+	serverInterface "github.com/valpere/trytrago/interface/server"
 )
 
 // Server-specific flags
@@ -82,17 +88,113 @@ func runServer() error {
 		logging.String("environment", environment),
 	)
 
-	// // If an error occurs
-	// if err := someOperation(); err != nil {
-	// 	log.Error("failed to perform operation",
-	// 		logging.Error(err),
-	// 		logging.String("component", "server"),
-	// 	)
-	// 	return err
-	// }
+	// Create context with timeout for initialization operations
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
-	// TODO: Implement server startup logic
-	log.Info("Starting trytrago server")
+	// Create configuration from loaded settings
+	config := &domain.Config{}
+	config.Environment = environment
+	config.Verbose = verbose
 
-	return nil
+	config.Server.HTTPPort = httpPort
+	config.Server.GRPCPort = grpcPort
+	config.Server.RateLimit.RequestsPerSecond = viper.GetInt("server.rate_limit.requests_per_second")
+	config.Server.RateLimit.BurstSize = viper.GetInt("server.rate_limit.burst_size")
+
+	config.Database.Type = dbType
+	config.Database.Host = dbHost
+	config.Database.Port = dbPort
+	config.Database.Name = dbName
+	config.Database.User = dbUser
+	config.Database.Password = dbPass
+	config.Database.PoolSize = dbPoolSize
+	config.Database.MaxIdleConns = dbMaxIdleConns
+	config.Database.MaxOpenConns = dbMaxOpenConns
+	config.Database.ConnTimeout = dbConnTimeout
+
+	config.Logging.Level = logLevel
+	config.Logging.Format = logFormat
+	config.Logging.FilePath = viper.GetString("logging.file_path")
+
+	config.Auth.JWTSecret = viper.GetString("auth.jwt_secret")
+	config.Auth.TokenExpiration = viper.GetDuration("auth.token_expiration")
+
+	// Set up database connection
+	dbOpts := repository.Options{
+		Driver:          dbType,
+		Host:            dbHost,
+		Port:            dbPort,
+		Database:        dbName,
+		Username:        dbUser,
+		Password:        dbPass,
+		MaxIdleConns:    dbMaxIdleConns,
+		MaxOpenConns:    dbMaxOpenConns,
+		ConnMaxLifetime: dbConnTimeout,
+		Debug:           verbose,
+	}
+
+	// Create repository
+	repo, err := domain.NewRepository(ctx, dbOpts)
+	if err != nil {
+		log.Error("failed to create repository",
+			logging.Error(err),
+			logging.String("component", "server"),
+		)
+		return err
+	}
+
+	// Run database migrations
+	log.Info("checking database migrations")
+	migrationHelper, err := migration.NewHelper(repo, log)
+	if err != nil {
+		log.Error("failed to create migration helper",
+			logging.Error(err),
+			logging.String("component", "server"),
+		)
+		return err
+	}
+
+	// Run migrations automatically in development, manually in production
+	autoApply := environment != "production"
+	if err := migrationHelper.EnsureMigrationsRun(ctx, "migrations", autoApply); err != nil {
+		log.Error("failed to ensure migrations are applied",
+			logging.Error(err),
+			logging.String("component", "server"),
+		)
+
+		// In production, fail if migrations are not applied
+		if environment == "production" {
+			return err
+		}
+
+		// In development, log warning but continue
+		log.Warn("continuing without migrations applied")
+	}
+
+	// Apply database optimizations
+	if err := migrationHelper.PerformDatabaseOptimizations(ctx); err != nil {
+		log.Warn("failed to apply database optimizations",
+			logging.Error(err),
+			logging.String("component", "server"),
+		)
+		// Continue despite optimization failures
+	}
+
+	// Initialize services
+	entryService := service.NewEntryService(repo, log)
+	translationService := service.NewTranslationService(repo, log)
+	userService := service.NewUserService(repo, log)
+
+	// Start server
+	server := serverInterface.NewServer(
+		config,
+		log,
+		entryService,
+		translationService,
+		userService,
+	)
+
+	log.Info("TryTraGo server started successfully")
+	return server.Start()
 }
