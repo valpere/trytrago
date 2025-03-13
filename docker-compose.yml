@@ -10,7 +10,6 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"  # HTTP API
-      - "9090:9090"  # gRPC API
     environment:
       - TRYTRAGO_ENVIRONMENT=development
       - TRYTRAGO_LOGGING_LEVEL=debug

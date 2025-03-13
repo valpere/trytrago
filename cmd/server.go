@@ -17,7 +17,6 @@ import (
 // Server-specific flags
 var (
 	httpPort       int           // HTTP server port
-	grpcPort       int           // gRPC server port
 	dbType         string        // Database type (postgres, mysql, sqlite)
 	dbHost         string        // Database host
 	dbPort         int           // Database port
@@ -34,7 +33,7 @@ var (
 var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "Start the trytrago server",
-	Long: `Start the trytrago dictionary server with both REST and gRPC APIs.
+	Long: `Start the trytrago dictionary server with REST API.
 The server can be configured to use different database backends and supports
 various configuration options for optimization.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -46,7 +45,6 @@ func init() {
 
 	// Define server-specific flags
 	serverCmd.Flags().IntVar(&httpPort, "http-port", 8080, "HTTP server port")
-	serverCmd.Flags().IntVar(&grpcPort, "grpc-port", 9090, "gRPC server port")
 
 	// Database connection flags
 	serverCmd.Flags().StringVar(&dbType, "db-type", "postgres", "Database type (postgres, mysql, sqlite)")
@@ -64,7 +62,6 @@ func init() {
 
 	// Bind flags with viper
 	viper.BindPFlag("server.http_port", serverCmd.Flags().Lookup("http-port"))
-	viper.BindPFlag("server.grpc_port", serverCmd.Flags().Lookup("grpc-port"))
 	viper.BindPFlag("database.type", serverCmd.Flags().Lookup("db-type"))
 	viper.BindPFlag("database.host", serverCmd.Flags().Lookup("db-host"))
 	viper.BindPFlag("database.port", serverCmd.Flags().Lookup("db-port"))
@@ -84,7 +81,6 @@ func init() {
 func runServer() error {
 	log.Info("starting server",
 		logging.Int("http_port", httpPort),
-		logging.Int("grpc_port", grpcPort),
 		logging.String("environment", environment),
 	)
 
@@ -98,7 +94,6 @@ func runServer() error {
 	config.Verbose = verbose
 
 	config.Server.HTTPPort = httpPort
-	config.Server.GRPCPort = grpcPort
 	config.Server.RateLimit.RequestsPerSecond = viper.GetInt("server.rate_limit.requests_per_second")
 	config.Server.RateLimit.BurstSize = viper.GetInt("server.rate_limit.burst_size")
 
