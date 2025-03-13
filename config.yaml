@@ -1,0 +1,38 @@
+# TryTraGo Application Configuration
+
+server:
+  http:
+    port: 8080
+    timeout: 30s
+    read_timeout: 15s
+    write_timeout: 15s
+
+database:
+  type: postgres        # Options: postgres, mysql, sqlite
+  host: localhost
+  port: 5432
+  user: trytrago
+  password: password
+  database: trytrago
+  sslmode: disable
+  max_conns: 20
+  timeout: 30
+
+logger:
+  level: info           # Options: debug, info, warn, error
+  format: console       # Options: console, json
+  output: stdout        # Options: stdout, file
+  enable_file: false
+  file_path: logs/trytrago.log
+
+auth:
+  jwt_secret: "your-secret-key-change-this-in-production"
+  access_token_duration: 1h
+  refresh_token_duration: 168h  # 7 days
+
+cache:
+  type: redis           # Options: redis, memory
+  address: localhost:6379
+  password: ""
+  db: 0
+  expiry: 3600          # Default TTL in seconds

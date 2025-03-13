@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/valpere/trytrago/domain/logging"
 	"github.com/valpere/trytrago/infrastructure/auth"
 )
 
@@ -83,7 +82,7 @@ func OptionalAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get the Authorization header
 		authHeader := c.GetHeader("Authorization")
-		
+
 		// If no auth header, just continue to the next handler
 		if authHeader == "" {
 			c.Next()

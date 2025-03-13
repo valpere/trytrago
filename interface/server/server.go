@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,10 +15,9 @@ import (
 	"github.com/valpere/trytrago/domain"
 	"github.com/valpere/trytrago/domain/logging"
 	"github.com/valpere/trytrago/interface/api/rest"
-	"google.golang.org/grpc"
 )
 
-// Server is the main server that handles both HTTP and gRPC traffic
+// Server is the main server that handles HTTP traffic
 type Server struct {
 	cfg          *domain.Config
 	logger       logging.Logger
@@ -28,7 +26,6 @@ type Server struct {
 	userService  service.UserService
 
 	httpServer *http.Server
-	grpcServer *grpc.Server
 
 	shutdownWg sync.WaitGroup
 	shutdownCh chan os.Signal
@@ -52,7 +49,7 @@ func NewServer(
 	}
 }
 
-// Start initializes and starts both HTTP and gRPC servers
+// Start initializes and starts HTTP server
 func (s *Server) Start() error {
 	// Set up signal handling for graceful shutdown
 	signal.Notify(s.shutdownCh, os.Interrupt, syscall.SIGTERM)
@@ -84,29 +81,6 @@ func (s *Server) Start() error {
 		}
 	}()
 
-	// Start gRPC server in a goroutine
-	s.shutdownWg.Add(1)
-	go func() {
-		defer s.shutdownWg.Done()
-
-		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", s.cfg.Server.GRPCPort))
-		if err != nil {
-			s.logger.Error("failed to listen for gRPC server", logging.Error(err))
-			return
-		}
-
-		s.grpcServer = grpc.NewServer()
-		// Register gRPC services here
-		// proto.RegisterDictionaryServiceServer(s.grpcServer, grpcService.NewDictionaryService(s.entryService, s.transService))
-		// proto.RegisterUserServiceServer(s.grpcServer, grpcService.NewUserService(s.userService))
-
-		s.logger.Info("starting gRPC server", logging.Int("port", s.cfg.Server.GRPCPort))
-
-		if err := s.grpcServer.Serve(listener); err != nil {
-			s.logger.Error("failed to start gRPC server", logging.Error(err))
-		}
-	}()
-
 	// Wait for shutdown signal
 	<-s.shutdownCh
 	return s.Shutdown()
@@ -125,12 +99,6 @@ func (s *Server) Shutdown() error {
 		if err := s.httpServer.Shutdown(ctx); err != nil {
 			s.logger.Error("HTTP server shutdown error", logging.Error(err))
 		}
-	}
-
-	// Shutdown gRPC server
-	if s.grpcServer != nil {
-		s.logger.Info("shutting down gRPC server")
-		s.grpcServer.GracefulStop()
 	}
 
 	// Wait for all goroutines to finish
