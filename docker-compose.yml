@@ -1,89 +1,100 @@
-version: '3.8'
+version: "3.8"
 
 services:
-  # TryTraGo Dictionary Server
+  # TryTraGo Application
   trytrago:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: trytrago
-    restart: unless-stopped
+      args:
+        VERSION: dev
+        COMMIT_SHA: local
+        BUILD_TIME: ${BUILD_TIME:-2023-01-01T00:00:00Z}
     ports:
-      - "8080:8080"  # HTTP API
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/etc/trytrago/config.yaml
+      - ./migrations:/etc/trytrago/migrations
+      - trytrago-data:/data/trytrago
     environment:
+      - TRYTRAGO_DATABASE_HOST=postgres
+      - TRYTRAGO_DATABASE_PORT=5432
+      - TRYTRAGO_DATABASE_USER=postgres
+      - TRYTRAGO_DATABASE_PASSWORD=postgres
+      - TRYTRAGO_DATABASE_NAME=trytrago
+      - TRYTRAGO_CACHE_ADDRESS=redis:6379
       - TRYTRAGO_ENVIRONMENT=development
       - TRYTRAGO_LOGGING_LEVEL=debug
       - TRYTRAGO_LOGGING_FORMAT=console
-      - TRYTRAGO_DATABASE_TYPE=postgres
-      - TRYTRAGO_DATABASE_HOST=postgres
-      - TRYTRAGO_DATABASE_PORT=5432
-      - TRYTRAGO_DATABASE_NAME=trytrago
-      - TRYTRAGO_DATABASE_USER=postgres
-      - TRYTRAGO_DATABASE_PASSWORD=postgres
-      - TRYTRAGO_DATABASE_POOL_SIZE=20
-      - TRYTRAGO_DATABASE_MAX_IDLE_CONNS=10
-      - TRYTRAGO_DATABASE_MAX_OPEN_CONNS=100
-      - TRYTRAGO_AUTH_JWT_SECRET=development_secret_change_me_in_production
-      - TRYTRAGO_AUTH_TOKEN_EXPIRATION=24h
-    volumes:
-      - ./config.yaml:/app/config.yaml
     depends_on:
       - postgres
       - redis
     networks:
       - trytrago-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # PostgreSQL Database
   postgres:
-    image: postgres:15-alpine
-    container_name: trytrago-postgres
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=trytrago
+    image: postgres:16-alpine
     ports:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=trytrago
     networks:
       - trytrago-network
-    command: postgres -c shared_buffers=256MB -c max_connections=500
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # Redis for caching
+  # Redis Cache
   redis:
     image: redis:7-alpine
-    container_name: trytrago-redis
-    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
       - redis-data:/data
+    command: redis-server --appendonly yes
     networks:
       - trytrago-network
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-
-  # Database admin tool
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: trytrago-pgadmin
     restart: unless-stopped
-    environment:
-      - PGADMIN_DEFAULT_EMAIL=admin@example.com
-      - PGADMIN_DEFAULT_PASSWORD=admin
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Adminer for database management (optional, development only)
+  adminer:
+    image: adminer
     ports:
-      - "5050:80"
-    volumes:
-      - pgadmin-data:/var/lib/pgadmin
+      - "8081:8080"
+    environment:
+      - ADMINER_DEFAULT_SERVER=postgres
     depends_on:
       - postgres
     networks:
       - trytrago-network
+    restart: unless-stopped
+    profiles:
+      - dev
 
 volumes:
   postgres-data:
   redis-data:
-  pgadmin-data:
+  trytrago-data:
 
 networks:
   trytrago-network:

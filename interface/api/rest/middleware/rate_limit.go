@@ -16,14 +16,6 @@ type ClientRateLimiter struct {
 	lastSeen time.Time
 }
 
-// RateLimiterConfig defines configuration for rate limiting
-type RateLimiterConfig struct {
-	RequestsPerSecond int           // Number of requests allowed per second
-	Burst             int           // Maximum burst size
-	CleanupInterval   time.Duration // Interval to clean up old limiters
-	ClientTimeout     time.Duration // Time after which a client is considered inactive
-}
-
 // RateLimiter middleware that limits request rate per client IP
 func RateLimiter(logger logging.Logger, cfg RateLimiterConfig) gin.HandlerFunc {
 	// Use default values if not provided

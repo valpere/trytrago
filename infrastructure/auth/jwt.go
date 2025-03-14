@@ -6,21 +6,37 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 var (
 	// ErrInvalidToken is returned when a token is invalid
 	ErrInvalidToken = errors.New("invalid token")
-	
+
 	// ErrExpiredToken is returned when a token is expired
 	ErrExpiredToken = errors.New("token has expired")
-	
+
+	// ErrInvalidSigningMethod is returned when a token uses an invalid signing method
+	ErrInvalidSigningMethod = errors.New("invalid signing method")
+
+	// ErrTokenNotInitialized is returned when JWT hasn't been initialized
+	ErrTokenNotInitialized = errors.New("JWT not initialized")
+
 	// jwtSecret is the secret key used to sign JWT tokens
 	jwtSecret []byte
-	
+
 	// tokenExpiry is the token expiration time
 	tokenExpiry time.Duration
 )
+
+// TokenClaims represents the extracted data from a validated token
+type TokenClaims struct {
+	UserID    string
+	Username  string
+	Role      string
+	IssuedAt  time.Time
+	ExpiresAt time.Time
+}
 
 // CustomClaims defines the claims for our JWT tokens
 type CustomClaims struct {
@@ -36,11 +52,16 @@ func InitJWT(secret string, expiry time.Duration) {
 	tokenExpiry = expiry
 }
 
+// IsInitialized returns whether JWT has been initialized
+func IsInitialized() bool {
+	return len(jwtSecret) > 0
+}
+
 // GenerateToken creates a new JWT token for a user
 func GenerateToken(userID, username, role string) (string, error) {
 	// Check if JWT has been initialized
-	if len(jwtSecret) == 0 {
-		return "", errors.New("JWT not initialized")
+	if !IsInitialized() {
+		return "", ErrTokenNotInitialized
 	}
 
 	// Create token claims
@@ -70,12 +91,22 @@ func GenerateToken(userID, username, role string) (string, error) {
 	return tokenString, nil
 }
 
+// GenerateTokenFromUUID is a convenience function that accepts a UUID
+func GenerateTokenFromUUID(userID uuid.UUID, username, role string) (string, error) {
+	return GenerateToken(userID.String(), username, role)
+}
+
 // GenerateRefreshToken creates a new refresh token
 func GenerateRefreshToken(userID string) (string, error) {
+	// Check if JWT has been initialized
+	if !IsInitialized() {
+		return "", ErrTokenNotInitialized
+	}
+
 	// Create token claims with longer expiry
 	now := time.Now()
 	claims := jwt.RegisteredClaims{
-		ExpiresAt: jwt.NewNumericDate(now.Add(tokenExpiry * 24 * 7)), // 1 week
+		ExpiresAt: jwt.NewNumericDate(now.Add(tokenExpiry * 24 * 7)), // 7 days
 		IssuedAt:  jwt.NewNumericDate(now),
 		NotBefore: jwt.NewNumericDate(now),
 		Issuer:    "trytrago-refresh",
@@ -94,28 +125,33 @@ func GenerateRefreshToken(userID string) (string, error) {
 	return tokenString, nil
 }
 
-// ValidateToken validates a JWT token and returns the parsed token
-func ValidateToken(tokenString string) (*jwt.Token, error) {
+// GenerateRefreshTokenFromUUID is a convenience function that accepts a UUID
+func GenerateRefreshTokenFromUUID(userID uuid.UUID) (string, error) {
+	return GenerateRefreshToken(userID.String())
+}
+
+// ValidateToken validates a JWT token and returns the extracted claims
+func ValidateToken(tokenString string) (*TokenClaims, error) {
 	// Check if JWT has been initialized
-	if len(jwtSecret) == 0 {
-		return nil, errors.New("JWT not initialized")
+	if !IsInitialized() {
+		return nil, ErrTokenNotInitialized
 	}
 
 	// Parse the token
 	token, err := jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
 		// Validate the signing method
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, ErrInvalidSigningMethod
 		}
 		return jwtSecret, nil
 	})
 
-	// Handle errors
+	// Handle parsing errors
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrExpiredToken
 		}
-		return nil, ErrInvalidToken
+		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}
 
 	// Check if the token is valid
@@ -123,31 +159,60 @@ func ValidateToken(tokenString string) (*jwt.Token, error) {
 		return nil, ErrInvalidToken
 	}
 
-	return token, nil
+	// Extract and validate the claims
+	claims, ok := token.Claims.(*CustomClaims)
+	if !ok {
+		return nil, ErrInvalidToken
+	}
+
+	// Create TokenClaims structure
+	return &TokenClaims{
+		UserID:    claims.UserID,
+		Username:  claims.Username,
+		Role:      claims.Role,
+		IssuedAt:  claims.IssuedAt.Time,
+		ExpiresAt: claims.ExpiresAt.Time,
+	}, nil
 }
 
 // ExtractUserIDFromToken extracts the user ID from a JWT token
 func ExtractUserIDFromToken(tokenString string) (string, error) {
-	token, err := ValidateToken(tokenString)
+	claims, err := ValidateToken(tokenString)
 	if err != nil {
 		return "", err
-	}
-
-	claims, ok := token.Claims.(*CustomClaims)
-	if !ok {
-		return "", ErrInvalidToken
 	}
 
 	return claims.UserID, nil
 }
 
+// ExtractUserUUIDFromToken extracts the user ID as UUID from a JWT token
+func ExtractUserUUIDFromToken(tokenString string) (uuid.UUID, error) {
+	userID, err := ExtractUserIDFromToken(tokenString)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	// Convert the ID to UUID
+	id, err := uuid.Parse(userID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("%w: invalid UUID format", ErrInvalidToken)
+	}
+
+	return id, nil
+}
+
 // ValidateRefreshToken validates a refresh token and returns the user ID
 func ValidateRefreshToken(tokenString string) (string, error) {
+	// Check if JWT has been initialized
+	if !IsInitialized() {
+		return "", ErrTokenNotInitialized
+	}
+
 	// Parse the token
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		// Validate the signing method
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, ErrInvalidSigningMethod
 		}
 		return jwtSecret, nil
 	})
@@ -157,7 +222,7 @@ func ValidateRefreshToken(tokenString string) (string, error) {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return "", ErrExpiredToken
 		}
-		return "", ErrInvalidToken
+		return "", fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}
 
 	// Check if the token is valid
@@ -183,4 +248,22 @@ func ValidateRefreshToken(tokenString string) (string, error) {
 	}
 
 	return userID, nil
+}
+
+// IsTokenExpired checks if a token is expired without validating the signature
+func IsTokenExpired(tokenString string) bool {
+	// Parse the token without validating signature
+	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, &CustomClaims{})
+	if err != nil {
+		return true
+	}
+
+	// Check expiration time
+	claims, ok := token.Claims.(*CustomClaims)
+	if !ok {
+		return true
+	}
+
+	// Check if token is expired
+	return claims.ExpiresAt.Time.Before(time.Now())
 }

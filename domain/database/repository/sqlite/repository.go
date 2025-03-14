@@ -471,3 +471,8 @@ func (r *dbrepo) WithTransaction(ctx context.Context, fn func(tx *gorm.DB) error
 
 	return nil
 }
+
+// GetDB returns the underlying gorm.DB instance
+func (r *dbrepo) GetDB() (*gorm.DB, error) {
+	return r.db, nil
+}

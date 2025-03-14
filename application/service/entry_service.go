@@ -275,7 +275,7 @@ func (s *entryService) UpdateMeaning(ctx context.Context, id uuid.UUID, req *req
 
 	// Find the meaning and its parent entry
 	var foundMeaning *database.Meaning
-	var parentEntry *database.Entry
+	var foundEntry *database.Entry
 
 	for i := range entries {
 		entry := &entries[i]
@@ -283,7 +283,7 @@ func (s *entryService) UpdateMeaning(ctx context.Context, id uuid.UUID, req *req
 			meaning := &entry.Meanings[j]
 			if meaning.ID == id {
 				foundMeaning = meaning
-				parentEntry = entry
+				foundEntry = entry
 				break
 			}
 		}
@@ -324,7 +324,7 @@ func (s *entryService) UpdateMeaning(ctx context.Context, id uuid.UUID, req *req
 	}
 
 	// Save the updated entry
-	if err := s.repo.UpdateEntry(ctx, parentEntry); err != nil {
+	if err := s.repo.UpdateEntry(ctx, foundEntry); err != nil {
 		s.logger.Error("failed to update meaning",
 			logging.Error(err),
 			logging.String("meaningID", id.String()),
@@ -333,11 +333,11 @@ func (s *entryService) UpdateMeaning(ctx context.Context, id uuid.UUID, req *req
 	}
 
 	// Retrieve the updated entry to ensure we have the latest data
-	updatedEntry, err := s.repo.GetEntryByID(ctx, parentEntry.ID)
+	updatedEntry, err := s.repo.GetEntryByID(ctx, foundEntry.ID)
 	if err != nil {
 		s.logger.Error("failed to retrieve updated entry",
 			logging.Error(err),
-			logging.String("entryID", parentEntry.ID.String()),
+			logging.String("entryID", foundEntry.ID.String()),
 		)
 		return nil, fmt.Errorf("failed to retrieve updated entry: %w", err)
 	}
@@ -382,7 +382,7 @@ func (s *entryService) DeleteMeaning(ctx context.Context, id uuid.UUID) error {
 
 	// Find the meaning and its parent entry
 	var foundMeaning *database.Meaning
-	var parentEntry *database.Entry
+	var foundEntry *database.Entry
 	var meaningIndex int
 
 	for i := range entries {
@@ -391,7 +391,7 @@ func (s *entryService) DeleteMeaning(ctx context.Context, id uuid.UUID) error {
 			meaning := &entry.Meanings[j]
 			if meaning.ID == id {
 				foundMeaning = meaning
-				parentEntry = entry
+				foundEntry = entry
 				meaningIndex = j
 				break
 			}
@@ -406,13 +406,13 @@ func (s *entryService) DeleteMeaning(ctx context.Context, id uuid.UUID) error {
 	}
 
 	// Remove the meaning from the entry
-	parentEntry.Meanings = append(
-		parentEntry.Meanings[:meaningIndex],
-		parentEntry.Meanings[meaningIndex+1:]...,
+	foundEntry.Meanings = append(
+		foundEntry.Meanings[:meaningIndex],
+		foundEntry.Meanings[meaningIndex+1:]...,
 	)
 
 	// Save the updated entry
-	if err := s.repo.UpdateEntry(ctx, parentEntry); err != nil {
+	if err := s.repo.UpdateEntry(ctx, foundEntry); err != nil {
 		s.logger.Error("failed to update entry after deleting meaning",
 			logging.Error(err),
 			logging.String("meaningID", id.String()),
@@ -474,9 +474,8 @@ func (s *entryService) AddMeaningComment(ctx context.Context, meaningID uuid.UUI
 		return nil, fmt.Errorf("failed to find meaning: %w", err)
 	}
 
-	// Find the meaning and its parent entry
+	// Find the meaning
 	var foundMeaning *database.Meaning
-	var parentEntry *database.Entry
 
 	for i := range entries {
 		entry := &entries[i]
@@ -484,7 +483,6 @@ func (s *entryService) AddMeaningComment(ctx context.Context, meaningID uuid.UUI
 			meaning := &entry.Meanings[j]
 			if meaning.ID == meaningID {
 				foundMeaning = meaning
-				parentEntry = entry
 				break
 			}
 		}
