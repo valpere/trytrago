@@ -1,95 +1,112 @@
+# TryTraGo Makefile
+
+.PHONY: all build clean test lint docker-build docker-run run help migrate db-init db-reset
+
 # Project variables
-PROJECT_NAME := trytrago
-MAIN_PACKAGE := github.com/valpere/$(PROJECT_NAME)
-BINARY_NAME := $(PROJECT_NAME)
-PROJECT_VERSION := v0.1.0
+BINARY_NAME=trytrago
+# VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+VERSION="dev"
+COMMIT_SHA=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+LDFLAGS=-ldflags "-X github.com/valpere/trytrago/domain.Version=$(VERSION) -X github.com/valpere/trytrago/domain.CommitSHA=$(COMMIT_SHA) -X github.com/valpere/trytrago/domain.BuildTime=$(BUILD_TIME)"
+GO_FILES=$(shell find . -name "*.go" -type f -not -path "./vendor/*")
 
-# Get the current git version and commit
-# GIT_VERSION ?= $(shell git describe --tags --always --dirty)
-GIT_COMMIT_SHA ?= $(shell git rev-parse --short HEAD)
-BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+# Default target
+all: clean lint test build
 
-# Go build flags
-LDFLAGS := -ldflags "\
-	-X $(MAIN_PACKAGE)/domain.Version=$(PROJECT_VERSION) \
-	-X $(MAIN_PACKAGE)/domain.CommitSHA=$(GIT_COMMIT_SHA) \
-	-X $(MAIN_PACKAGE)/domain.BuildTime=$(BUILD_TIME)"
+# Build the application
+build:
+	@echo "Building..."
+	@mkdir -p build
+	go build $(LDFLAGS) -o build/$(BINARY_NAME) .
 
-# Environment variables
-GO ?= go
-GOPATH ?= $(shell $(GO) env GOPATH)
-GOOS ?= $(shell $(GO) env GOOS)
-GOARCH ?= $(shell $(GO) env GOARCH)
+# Clean build artifacts
+clean:
+	@echo "Cleaning..."
+	@rm -rf build/
+	@rm -f coverage.out
 
-# Build directory
-BUILD_DIR := build
+# Run tests
+test:
+	@echo "Running tests..."
+	go test -v -race -cover ./...
 
-# All source files, used for formatting and linting
-SOURCES := $(shell find . -name "*.go" -not -path "./vendor/*")
+# Generate test coverage
+coverage:
+	@echo "Generating test coverage..."
+	go test -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out
 
-.DEFAULT_GOAL := help
+# Run linting
+lint:
+	@echo "Linting..."
+	golangci-lint run --timeout=5m
 
-.PHONY: help
-help: ## Display this help message
-	@echo "Usage:"
-	@echo "  make <target>"
+# Run the application
+run: build
+	@echo "Running..."
+	./build/$(BINARY_NAME) server
+
+# Build Docker image
+docker-build:
+	@echo "Building Docker image..."
+	docker build -t $(BINARY_NAME):$(VERSION) .
+
+# Run with Docker
+docker-run: docker-build
+	@echo "Running Docker container..."
+	docker run -p 8080:8080 $(BINARY_NAME):$(VERSION)
+
+# Run with Docker Compose
+docker-compose-up:
+	@echo "Starting Docker Compose services..."
+	docker-compose up -d
+
+# Stop Docker Compose services
+docker-compose-down:
+	@echo "Stopping Docker Compose services..."
+	docker-compose down
+
+# Run database migrations
+migrate:
+	@echo "Running database migrations..."
+	./build/$(BINARY_NAME) migrate --apply
+
+# Initialize database schema
+db-init: build
+	@echo "Initializing database schema..."
+	./build/$(BINARY_NAME) migrate --apply
+
+# Reset database (drop and recreate)
+db-reset:
+	@echo "Resetting database..."
+	./build/$(BINARY_NAME) migrate --rollback --all
+	./build/$(BINARY_NAME) migrate --apply
+
+# Generate Go code (GORM models, mock interfaces)
+generate:
+	@echo "Generating code..."
+	go generate ./...
+
+# Show help
+help:
+	@echo "TryTraGo Makefile"
+	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@awk '/^[a-zA-Z_-]+:.*?## / { \
-		printf "  \033[36m%-20s\033[0m %s\n", substr($$1, 1, length($$1)-1), substr($$0, index($$0, "##") + 3) \
-	}' $(MAKEFILE_LIST)
-
-.PHONY: build
-build: clean ## Build the binary
-	@echo "Building $(PROJECT_NAME)..."
-	@mkdir -p $(BUILD_DIR)
-	$(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) .
-	@echo "Binary built at $(BUILD_DIR)/$(BINARY_NAME)"
-
-.PHONY: clean
-clean: ## Clean build artifacts
-	@echo "Cleaning build artifacts..."
-	@rm -rf $(BUILD_DIR)
-	@echo "Cleaned build directory"
-
-.PHONY: test
-test: ## Run tests
-	@echo "Running tests..."
-	$(GO) test -v ./...
-
-.PHONY: coverage
-coverage: ## Run tests with coverage
-	@echo "Running tests with coverage..."
-	@mkdir -p $(BUILD_DIR)
-	$(GO) test -coverprofile=$(BUILD_DIR)/coverage.out ./...
-	$(GO) tool cover -html=$(BUILD_DIR)/coverage.out -o $(BUILD_DIR)/coverage.html
-	@echo "Coverage report generated at $(BUILD_DIR)/coverage.html"
-
-.PHONY: fmt
-fmt: ## Format code using gofmt
-	@echo "Formatting code..."
-	@gofmt -s -w $(SOURCES)
-	@echo "Code formatting complete"
-
-.PHONY: lint
-lint: ## Run linter
-	@echo "Running linter..."
-	@golangci-lint run
-	@echo "Linting complete"
-
-.PHONY: deps
-deps: ## Download dependencies
-	@echo "Downloading dependencies..."
-	$(GO) mod download
-	@echo "Dependencies downloaded"
-
-.PHONY: run
-run: build ## Run the application
-	@echo "Running $(PROJECT_NAME)..."
-	./$(BUILD_DIR)/$(BINARY_NAME)
-
-.PHONY: install
-install: build ## Install the binary
-	@echo "Installing $(PROJECT_NAME)..."
-	cp $(BUILD_DIR)/$(BINARY_NAME) $(GOPATH)/bin/
-	@echo "Installed at $(GOPATH)/bin/$(BINARY_NAME)"
+	@echo "  all          Build, test, and lint (default)"
+	@echo "  build        Build the application"
+	@echo "  clean        Clean build artifacts"
+	@echo "  test         Run tests"
+	@echo "  coverage     Generate test coverage"
+	@echo "  lint         Run linting"
+	@echo "  run          Run the application"
+	@echo "  docker-build Build Docker image"
+	@echo "  docker-run   Run with Docker"
+	@echo "  docker-compose-up   Start Docker Compose services"
+	@echo "  docker-compose-down Stop Docker Compose services"
+	@echo "  migrate      Run database migrations"
+	@echo "  db-init      Initialize database schema"
+	@echo "  db-reset     Reset database"
+	@echo "  generate     Generate Go code"
+	@echo "  help         Show this help"

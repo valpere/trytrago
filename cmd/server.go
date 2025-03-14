@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"context"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -10,186 +13,202 @@ import (
 	"github.com/valpere/trytrago/domain"
 	"github.com/valpere/trytrago/domain/database/repository"
 	"github.com/valpere/trytrago/domain/logging"
-	"github.com/valpere/trytrago/infrastructure/migration"
-	serverInterface "github.com/valpere/trytrago/interface/server"
-)
-
-// Server-specific flags
-var (
-	httpPort       int           // HTTP server port
-	dbType         string        // Database type (postgres, mysql, sqlite)
-	dbHost         string        // Database host
-	dbPort         int           // Database port
-	dbName         string        // Database name
-	dbUser         string        // Database user
-	dbPass         string        // Database password
-	dbPoolSize     int           // Connection pool size
-	dbMaxIdleConns int           // Maximum number of idle connections
-	dbMaxOpenConns int           // Maximum number of open connections
-	dbConnTimeout  time.Duration // Connection timeout
+	"github.com/valpere/trytrago/infrastructure/auth"
+	"github.com/valpere/trytrago/interface/server"
 )
 
 // serverCmd represents the server command
 var serverCmd = &cobra.Command{
 	Use:   "server",
-	Short: "Start the trytrago server",
-	Long: `Start the trytrago dictionary server with REST API.
-The server can be configured to use different database backends and supports
-various configuration options for optimization.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runServer()
-	},
+	Short: "Start the TryTraGo server",
+	Long:  `Start the TryTraGo multilanguage dictionary server with REST API support.`,
+	RunE:  runServer,
 }
 
 func init() {
-
-	// Define server-specific flags
-	serverCmd.Flags().IntVar(&httpPort, "http-port", 8080, "HTTP server port")
-
-	// Database connection flags
-	serverCmd.Flags().StringVar(&dbType, "db-type", "postgres", "Database type (postgres, mysql, sqlite)")
-	serverCmd.Flags().StringVar(&dbHost, "db-host", "localhost", "Database host")
-	serverCmd.Flags().IntVar(&dbPort, "db-port", 5432, "Database port")
-	serverCmd.Flags().StringVar(&dbName, "db-name", "trytra", "Database name")
-	serverCmd.Flags().StringVar(&dbUser, "db-user", "", "Database user")
-	serverCmd.Flags().StringVar(&dbPass, "db-pass", "", "Database password")
-
-	// Database optimization flags (important for 60M entries)
-	serverCmd.Flags().IntVar(&dbPoolSize, "db-pool-size", 10, "Database connection pool size")
-	serverCmd.Flags().IntVar(&dbMaxIdleConns, "db-max-idle-conns", 5, "Maximum idle database connections")
-	serverCmd.Flags().IntVar(&dbMaxOpenConns, "db-max-open-conns", 50, "Maximum open database connections")
-	serverCmd.Flags().DurationVar(&dbConnTimeout, "db-conn-timeout", 30*time.Second, "Database connection timeout")
-
-	// Bind flags with viper
-	viper.BindPFlag("server.http_port", serverCmd.Flags().Lookup("http-port"))
-	viper.BindPFlag("database.type", serverCmd.Flags().Lookup("db-type"))
-	viper.BindPFlag("database.host", serverCmd.Flags().Lookup("db-host"))
-	viper.BindPFlag("database.port", serverCmd.Flags().Lookup("db-port"))
-	viper.BindPFlag("database.name", serverCmd.Flags().Lookup("db-name"))
-	viper.BindPFlag("database.user", serverCmd.Flags().Lookup("db-user"))
-	viper.BindPFlag("database.password", serverCmd.Flags().Lookup("db-pass"))
-	viper.BindPFlag("database.pool_size", serverCmd.Flags().Lookup("db-pool-size"))
-	viper.BindPFlag("database.max_idle_conns", serverCmd.Flags().Lookup("db-max-idle-conns"))
-	viper.BindPFlag("database.max_open_conns", serverCmd.Flags().Lookup("db-max-open-conns"))
-	viper.BindPFlag("database.conn_timeout", serverCmd.Flags().Lookup("db-conn-timeout"))
-
-	// Add server command to root command
 	rootCmd.AddCommand(serverCmd)
+
+	// Add server-specific flags
+	serverCmd.Flags().IntP("port", "p", 8080, "HTTP server port (overrides config)")
+	serverCmd.Flags().StringP("db-type", "t", "", "Database type (postgres, mysql, sqlite)")
+	serverCmd.Flags().StringP("log-level", "l", "", "Log level (debug, info, warn, error)")
 }
 
-// runServer implements the server command
-func runServer() error {
-	log.Info("starting server",
-		logging.Int("http_port", httpPort),
-		logging.String("environment", environment),
-	)
+func runServer(cmd *cobra.Command, args []string) error {
+	// Initialize logger
+	logger := logging.GetLogger()
+	logger.Info("Starting TryTraGo server")
 
-	// Create context with timeout for initialization operations
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
+	// Load configuration
+	config := loadConfiguration()
 
-	// Create configuration from loaded settings
-	config := &domain.Config{}
-	config.Environment = environment
-	config.Verbose = verbose
-
-	config.Server.HTTPPort = httpPort
-	config.Server.RateLimit.RequestsPerSecond = viper.GetInt("server.rate_limit.requests_per_second")
-	config.Server.RateLimit.BurstSize = viper.GetInt("server.rate_limit.burst_size")
-
-	config.Database.Type = dbType
-	config.Database.Host = dbHost
-	config.Database.Port = dbPort
-	config.Database.Name = dbName
-	config.Database.User = dbUser
-	config.Database.Password = dbPass
-	config.Database.PoolSize = dbPoolSize
-	config.Database.MaxIdleConns = dbMaxIdleConns
-	config.Database.MaxOpenConns = dbMaxOpenConns
-	config.Database.ConnTimeout = dbConnTimeout
-
-	config.Logging.Level = logLevel
-	config.Logging.Format = logFormat
-	config.Logging.FilePath = viper.GetString("logging.file_path")
-
-	config.Auth.JWTSecret = viper.GetString("auth.jwt_secret")
-	config.Auth.TokenExpiration = viper.GetDuration("auth.token_expiration")
-
-	// Set up database connection
-	dbOpts := repository.Options{
-		Driver:          dbType,
-		Host:            dbHost,
-		Port:            dbPort,
-		Database:        dbName,
-		Username:        dbUser,
-		Password:        dbPass,
-		MaxIdleConns:    dbMaxIdleConns,
-		MaxOpenConns:    dbMaxOpenConns,
-		ConnMaxLifetime: dbConnTimeout,
-		Debug:           verbose,
+	// Override config with command line flags if provided
+	if port, _ := cmd.Flags().GetInt("port"); port != 0 {
+		config.Server.Port = port
+	}
+	if dbType, _ := cmd.Flags().GetString("db-type"); dbType != "" {
+		config.Database.Type = dbType
+	}
+	if logLevel, _ := cmd.Flags().GetString("log-level"); logLevel != "" {
+		config.Logging.Level = logLevel
 	}
 
-	// Create repository
-	repo, err := domain.NewRepository(ctx, dbOpts)
+	// Initialize database
+	repo, err := initializeRepository(config)
 	if err != nil {
-		log.Error("failed to create repository",
-			logging.Error(err),
-			logging.String("component", "server"),
-		)
+		logger.Error("Failed to initialize repository", logging.Error(err))
 		return err
 	}
 
-	// Run database migrations
-	log.Info("checking database migrations")
-	migrationHelper, err := migration.NewHelper(repo, log)
-	if err != nil {
-		log.Error("failed to create migration helper",
-			logging.Error(err),
-			logging.String("component", "server"),
-		)
-		return err
-	}
-
-	// Run migrations automatically in development, manually in production
-	autoApply := environment != "production"
-	if err := migrationHelper.EnsureMigrationsRun(ctx, "migrations", autoApply); err != nil {
-		log.Error("failed to ensure migrations are applied",
-			logging.Error(err),
-			logging.String("component", "server"),
-		)
-
-		// In production, fail if migrations are not applied
-		if environment == "production" {
-			return err
-		}
-
-		// In development, log warning but continue
-		log.Warn("continuing without migrations applied")
-	}
-
-	// Apply database optimizations
-	if err := migrationHelper.PerformDatabaseOptimizations(ctx); err != nil {
-		log.Warn("failed to apply database optimizations",
-			logging.Error(err),
-			logging.String("component", "server"),
-		)
-		// Continue despite optimization failures
-	}
+	// Initialize JWT
+	auth.InitJWT(config.Auth.JWTSecret, config.Auth.AccessTokenDuration)
 
 	// Initialize services
-	entryService := service.NewEntryService(repo, log)
-	translationService := service.NewTranslationService(repo, log)
-	userService := service.NewUserService(repo, log)
+	entryService := service.NewEntryService(repo, logger)
+	translationService := service.NewTranslationService(repo, logger)
+	userService := service.NewUserService(repo, logger)
 
 	// Start server
-	server := serverInterface.NewServer(
+	srv := server.NewServer(
 		config,
-		log,
+		logger,
 		entryService,
 		translationService,
 		userService,
 	)
 
-	log.Info("TryTraGo server started successfully")
-	return server.Start()
+	// Set up graceful shutdown
+	shutdownCh := make(chan os.Signal, 1)
+	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		if err := srv.Start(); err != nil {
+			logger.Error("Server error", logging.Error(err))
+			shutdownCh <- os.Interrupt
+		}
+	}()
+
+	logger.Info("TryTraGo server started successfully")
+
+	// Wait for shutdown signal
+	<-shutdownCh
+	logger.Info("Shutting down server...")
+
+	// Graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Error("Server shutdown error", logging.Error(err))
+		return err
+	}
+
+	logger.Info("Server gracefully stopped")
+	return nil
+}
+
+// loadConfiguration loads the application configuration
+func loadConfiguration() domain.Config {
+	var config domain.Config
+
+	// Set defaults
+	config.Server.Port = 8080
+	config.Server.Timeout = 30 * time.Second
+	config.Server.ReadTimeout = 15 * time.Second
+	config.Server.WriteTimeout = 15 * time.Second
+
+	config.Database.Type = "postgres"
+	config.Database.Host = "localhost"
+	config.Database.Port = 5432
+	config.Database.Name = "trytrago"
+	config.Database.MaxOpenConns = 20
+	config.Database.MaxIdleConns = 10
+	config.Database.ConnLifetime = 5 * time.Minute
+
+	config.Logging.Level = "info"
+	config.Logging.Format = "console"
+
+	config.Auth.JWTSecret = "your-secret-key-change-this-in-production"
+	config.Auth.AccessTokenDuration = 1 * time.Hour
+	config.Auth.RefreshTokenDuration = 7 * 24 * time.Hour
+
+	// Read from viper if available
+	if viper.IsSet("server.port") {
+		config.Server.Port = viper.GetInt("server.port")
+	}
+	if viper.IsSet("server.timeout") {
+		config.Server.Timeout = viper.GetDuration("server.timeout")
+	}
+	if viper.IsSet("server.read_timeout") {
+		config.Server.ReadTimeout = viper.GetDuration("server.read_timeout")
+	}
+	if viper.IsSet("server.write_timeout") {
+		config.Server.WriteTimeout = viper.GetDuration("server.write_timeout")
+	}
+
+	if viper.IsSet("database.type") {
+		config.Database.Type = viper.GetString("database.type")
+	}
+	if viper.IsSet("database.host") {
+		config.Database.Host = viper.GetString("database.host")
+	}
+	if viper.IsSet("database.port") {
+		config.Database.Port = viper.GetInt("database.port")
+	}
+	if viper.IsSet("database.name") {
+		config.Database.Name = viper.GetString("database.name")
+	}
+	if viper.IsSet("database.user") {
+		config.Database.User = viper.GetString("database.user")
+	}
+	if viper.IsSet("database.password") {
+		config.Database.Password = viper.GetString("database.password")
+	}
+
+	if viper.IsSet("logging.level") {
+		config.Logging.Level = viper.GetString("logging.level")
+	}
+	if viper.IsSet("logging.format") {
+		config.Logging.Format = viper.GetString("logging.format")
+	}
+
+	if viper.IsSet("auth.jwt_secret") {
+		config.Auth.JWTSecret = viper.GetString("auth.jwt_secret")
+	}
+	if viper.IsSet("auth.access_token_duration") {
+		config.Auth.AccessTokenDuration = viper.GetDuration("auth.access_token_duration")
+	}
+	if viper.IsSet("auth.refresh_token_duration") {
+		config.Auth.RefreshTokenDuration = viper.GetDuration("auth.refresh_token_duration")
+	}
+
+	if viper.IsSet("environment") {
+		config.Environment = viper.GetString("environment")
+	} else {
+		config.Environment = "development"
+	}
+
+	return config
+}
+
+// initializeRepository initializes the repository based on configuration
+func initializeRepository(config domain.Config) (repository.Repository, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	opts := repository.Options{
+		Driver:          config.Database.Type,
+		Host:            config.Database.Host,
+		Port:            config.Database.Port,
+		Database:        config.Database.Name,
+		Username:        config.Database.User,
+		Password:        config.Database.Password,
+		SSLMode:         "disable",
+		MaxIdleConns:    config.Database.MaxIdleConns,
+		MaxOpenConns:    config.Database.MaxOpenConns,
+		ConnMaxLifetime: config.Database.ConnLifetime,
+		Debug:           config.Logging.Level == "debug",
+	}
+
+	return domain.NewRepository(ctx, opts)
 }

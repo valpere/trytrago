@@ -3,7 +3,6 @@ package migration
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"time"
 
@@ -60,7 +59,7 @@ func (h *Helper) EnsureMigrationsRun(ctx context.Context, migrationsDir string, 
 	}
 
 	// Report migration status
-	h.logger.Info("migration status", 
+	h.logger.Info("migration status",
 		logging.Int("total", len(status)),
 		logging.Int("applied", len(status)-pendingCount),
 		logging.Int("pending", pendingCount),
@@ -75,7 +74,7 @@ func (h *Helper) EnsureMigrationsRun(ctx context.Context, migrationsDir string, 
 			}
 			h.logger.Info("migrations applied successfully")
 		} else {
-			h.logger.Warn("pending migrations detected but auto-apply is disabled", 
+			h.logger.Warn("pending migrations detected but auto-apply is disabled",
 				logging.Int("pending", pendingCount),
 			)
 		}
@@ -136,13 +135,13 @@ func (h *Helper) PerformDatabaseOptimizations(ctx context.Context) error {
 	if err != nil {
 		// This might fail if the function doesn't exist yet
 		h.logger.Warn("failed to analyze tables", logging.Error(err))
-		
+
 		// Fall back to manual analyze
 		tables := []string{"entries", "meanings", "translations", "users", "comments", "likes"}
 		for _, table := range tables {
 			_, err := sqlDB.ExecContext(ctx, fmt.Sprintf("ANALYZE %s", table))
 			if err != nil {
-				h.logger.Warn("failed to analyze table", 
+				h.logger.Warn("failed to analyze table",
 					logging.String("table", table),
 					logging.Error(err),
 				)
@@ -164,13 +163,13 @@ func (h *Helper) materializedViewExists(ctx context.Context, db *sql.DB, viewNam
 		AND n.nspname = 'public' 
 		AND c.relname = $1
 	`
-	
+
 	var count int
 	err := db.QueryRowContext(ctx, query, viewName).Scan(&count)
 	if err != nil {
 		return false, err
 	}
-	
+
 	return count > 0, nil
 }
 
@@ -214,11 +213,11 @@ func (h *Helper) GetMigrationStatus(ctx context.Context, migrationsDir string) (
 	}
 
 	return map[string]interface{}{
-		"total":            len(status),
-		"applied":          appliedCount,
-		"pending":          pendingCount,
-		"last_applied":     lastApplied,
-		"last_applied_at":  lastAppliedTime,
+		"total":              len(status),
+		"applied":            appliedCount,
+		"pending":            pendingCount,
+		"last_applied":       lastApplied,
+		"last_applied_at":    lastAppliedTime,
 		"pending_migrations": pendingMigrations,
 	}, nil
 }

@@ -1,171 +1,225 @@
-# TryTraGo Dictionary Server
+# TryTraGo: Multilanguage Dictionary Server
 
-TryTraGo is a high-performance multilanguage dictionary server designed to support approximately 60 million entries. The system provides dual API support (REST and gRPC) and can connect to multiple database management systems (PostgreSQL, MySQL, SQLite) based on configuration.
+!!!!!!!!!!!!!!!!!!!
+!!! In Progress !!!
+!!!!!!!!!!!!!!!!!!!
+
+TryTraGo is a robust, high-performance dictionary server designed to support approximately 60 million dictionary entries across multiple languages. Built with Go and following clean architecture principles, TryTraGo offers a comprehensive API for managing dictionary entries, meanings, translations, and social interactions.
 
 ## Features
 
-- Multi-language dictionary with 60M+ entries support
-- Clean architecture design with separation of concerns
-- Dual API support (REST with Gin and gRPC)
-- Multiple database backends (PostgreSQL, MySQL, SQLite)
-- User management with JWT authentication
-- Social features (comments, likes, user feeds)
-- High-performance caching with Redis
-- Comprehensive error handling
-- Structured logging with Uber-zap
-- Containerized deployment with Docker
+- **Comprehensive Dictionary Management**: Create, read, update, and delete dictionary entries, meanings, and translations.
+- **Multilanguage Support**: Handle translations between any language pairs with ISO language code support.
+- **Social Features**: Comment on and like meanings and translations.
+- **User Management**: Authentication, authorization, and user profile management.
+- **Clean Architecture**: Clear separation of concerns across domain, application, interface, and infrastructure layers.
+- **Multiple Database Support**: Works with PostgreSQL (recommended for production), MySQL, and SQLite (for development).
+- **High Performance**: Optimized for handling 60 million dictionary entries with proper indexing and caching strategies.
+- **REST API**: Comprehensive HTTP API with proper resource modeling.
 
-## Project Structure
+## Architecture
 
-The project follows clean architecture principles with clear separation between layers:
+TryTraGo follows clean architecture principles with clear separation of concerns:
 
-```
-trytrago/
-├── application/          # Application layer (use cases, DTOs)
-│   ├── dto/              # Data Transfer Objects
-│   │   ├── request/      # Request DTOs
-│   │   └── response/     # Response DTOs
-│   ├── mapper/           # Object mappers
-│   └── service/          # Application services
-├── domain/               # Domain layer (core business logic)
-│   ├── database/         # Database entities and repositories
-│   ├── logging/          # Logging infrastructure
-│   └── model/            # Domain models
-├── infrastructure/       # Infrastructure concerns
-│   ├── auth/             # Authentication
-│   ├── cache/            # Caching
-│   └── migration/        # Database migrations
-├── interface/            # Interface layer (API controllers)
-│   ├── api/              # API implementations
-│   │   ├── grpc/         # gRPC API
-│   │   └── rest/         # REST API with Gin
-│   └── server/           # Server initialization
-└── cmd/                  # Command-line interface
-```
+1. **Domain Layer**: Core business entities and interfaces
+   - Database models (Entry, Meaning, Translation, etc.)
+   - Repository interfaces
+   - Domain-specific errors and validation logic
+
+2. **Application Layer**: Use cases and business logic
+   - Service implementations for entries, translations, and users
+   - DTOs for communication between layers
+   - Mapping logic between domain entities and DTOs
+
+3. **Interface Layer**: API implementations
+   - REST API using the Gin framework
+   - Request handlers and middleware
+   - Response formatting and error handling
+
+4. **Infrastructure Layer**: External implementations
+   - Database implementations for PostgreSQL, MySQL, and SQLite
+   - Authentication with JWT
+   - Caching with Redis
+   - Migration tooling
+
+## Technology Stack
+
+- **Go (Golang)**: version 1.24 or higher
+- **Gin**: Web framework
+- **GORM**: ORM with support for multiple databases
+- **Uber-zap**: High-performance, structured logging
+- **JWT**: For authentication
+- **Redis**: For caching
+- **Cobra + Viper**: CLI framework with configuration management
+- **Docker**: For containerization and local development
 
 ## Getting Started
 
 ### Prerequisites
 
 - Go 1.24 or higher
-- Docker and Docker Compose (for containerized setup)
-- PostgreSQL, MySQL, or SQLite (depending on your configuration)
+- Docker and Docker Compose (for local development)
+- Database (PostgreSQL, MySQL, or SQLite)
 
-### Running Locally
+### Installation
 
-1. Clone the repository
+1. Clone the repository:
+
    ```bash
    git clone https://github.com/valpere/trytrago.git
    cd trytrago
    ```
 
-2. Install dependencies
-   ```bash
-   go mod download
-   ```
+2. Build the project:
 
-3. Build the project
    ```bash
    make build
    ```
 
-4. Run the server
+3. Run the server:
+
    ```bash
    ./build/trytrago server
    ```
 
-### Docker Setup
+### Using Docker
 
-To run the entire stack with Docker Compose:
+For local development with Docker:
 
 ```bash
-docker-compose up -d
+docker-compose up
 ```
 
-This will start:
-- TryTraGo server
-- PostgreSQL database
-- Redis cache
-- pgAdmin for database management
+This will start the server with PostgreSQL and Redis.
 
-## API Documentation
+## API Endpoints
 
-### REST API
+The API follows REST principles for resource management.
 
-The REST API is available at `http://localhost:8080/api/v1` with the following endpoints:
+### Public Endpoints
 
-- **Authentication**
-  - `POST /auth/login` - Authenticate a user
-  - `POST /auth/refresh` - Refresh an access token
+- `GET /api/v1/entries`: List dictionary entries
+- `GET /api/v1/entries/:id`: Get a specific entry
+- `GET /api/v1/entries/:id/meanings`: List meanings for an entry
+- `GET /api/v1/entries/:entryId/meanings/:meaningId`: Get a specific meaning
+- `GET /api/v1/entries/:entryId/meanings/:meaningId/translations`: List translations for a meaning
 
-- **Entries**
-  - `GET /entries` - List entries
-  - `GET /entries/:id` - Get an entry by ID
-  - `POST /entries` - Create a new entry
-  - `PUT /entries/:id` - Update an entry
-  - `DELETE /entries/:id` - Delete an entry
+### User Authentication
 
-- **Meanings**
-  - `GET /entries/:id/meanings` - List meanings for an entry
-  - `POST /entries/:id/meanings` - Add a meaning to an entry
-  - `PUT /entries/:id/meanings/:meaningId` - Update a meaning
-  - `DELETE /entries/:id/meanings/:meaningId` - Delete a meaning
+- `POST /api/v1/auth/register`: Create a new user
+- `POST /api/v1/auth/login`: Authenticate a user
+- `POST /api/v1/auth/refresh`: Refresh an authentication token
 
-- **Translations**
-  - `GET /entries/:id/meanings/:meaningId/translations` - List translations
-  - `POST /entries/:id/meanings/:meaningId/translations` - Add a translation
-  - `PUT /entries/:id/meanings/:meaningId/translations/:translationId` - Update a translation
-  - `DELETE /entries/:id/meanings/:meaningId/translations/:translationId` - Delete a translation
+### Protected Endpoints
 
-### gRPC API
+All protected endpoints require authentication:
 
-The gRPC API is available at `localhost:9090` with the following services:
-
-- `DictionaryService` - Operations for dictionary entries, meanings, and translations
-- `UserService` - User management and authentication
+- `POST /api/v1/entries`: Create a new entry
+- `PUT /api/v1/entries/:id`: Update an entry
+- `DELETE /api/v1/entries/:id`: Delete an entry
+- `POST /api/v1/entries/:entryId/meanings`: Add a meaning to an entry
+- `POST /api/v1/entries/:entryId/meanings/:meaningId/translations`: Add a translation to a meaning
+- `POST /api/v1/entries/:entryId/meanings/:meaningId/comments`: Comment on a meaning
+- `POST /api/v1/entries/:entryId/meanings/:meaningId/likes`: Like a meaning
 
 ## Configuration
 
-Configuration can be provided via:
-- Environment variables (prefixed with `TRYTRAGO_`)
-- Configuration file (yaml or json)
-- Command-line flags
+TryTraGo can be configured via:
+
+1. Configuration file (YAML)
+2. Environment variables
+3. Command-line flags
 
 Example configuration:
 
 ```yaml
-environment: development
-verbose: true
-
 server:
-  http_port: 8080
-  grpc_port: 9090
-  rate_limit:
-    requests_per_second: 100
-    burst_size: 20
+  port: 8080
+  timeout: 30s
 
 database:
-  type: postgres
+  type: postgres  # postgres, mysql, or sqlite
   host: localhost
   port: 5432
   name: trytrago
   user: postgres
   password: postgres
-  pool_size: 20
-  max_idle_conns: 10
-  max_open_conns: 100
-  conn_timeout: 30s
 
 logging:
-  level: debug
-  format: json
-  file_path: logs/trytrago.log
+  level: info  # debug, info, warn, error
+  format: json  # json or console
 
 auth:
-  jwt_secret: your_secret_key
-  token_expiration: 24h
+  jwt_secret: your-secret-key-change-this-in-production
+  access_token_duration: 1h
+  refresh_token_duration: 7d
+```
+
+## CLI Commands
+
+TryTraGo comes with a powerful CLI:
+
+- `trytrago server`: Start the HTTP server
+- `trytrago migrate`: Manage database migrations
+- `trytrago backup`: Backup dictionary content
+- `trytrago restore`: Restore dictionary content
+- `trytrago config`: Display current configuration
+- `trytrago version`: Display version information
+
+## Development
+
+### Project Structure
+
+```plaintext
+trytrago/
+├── cmd/                   # CLI commands
+├── domain/                # Domain layer
+│   ├── database/          # Database models and repositories
+│   ├── logging/           # Logging infrastructure
+│   └── model/             # Domain models
+├── application/           # Application layer
+│   ├── dto/               # Data Transfer Objects
+│   ├── mapper/            # Object mappers
+│   └── service/           # Application services
+├── interface/             # Interface layer
+│   ├── api/               # API implementations
+│   │   └── rest/          # REST API
+│   └── server/            # Server implementations
+├── infrastructure/        # Infrastructure layer
+│   ├── auth/              # Authentication
+│   ├── cache/             # Caching
+│   └── migration/         # Database migrations
+├── migrations/            # SQL migration files
+└── scripts/               # Utility scripts
+```
+
+### Testing
+
+Run the tests with:
+
+```bash
+make test
 ```
 
 ## License
 
 This project is licensed under the Apache License 2.0 - see the LICENSE file for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## Acknowledgments
+
+- Built with love by the TryTraGo team
+- Special thanks to all contributors
+
+---
+
+For detailed documentation, please refer to the [docs](./docs) directory.

@@ -6,152 +6,116 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
+	"github.com/valpere/trytrago/domain/logging"
 	"github.com/valpere/trytrago/infrastructure/auth"
+
+	"time"
 )
 
-// AuthConfig defines configuration for the Auth middleware
-type AuthConfig struct {
-	JWTSecret    string
-	TokenExpiry  int
-	AllowedPaths []string // Paths that can be accessed without auth
+// RateLimiterConfig defines configuration for rate limiting
+type RateLimiterConfig struct {
+	RequestsPerSecond int           // Number of requests allowed per second
+	Burst             int           // Maximum burst size
+	CleanupInterval   time.Duration // Interval to clean up old limiters
+	ClientTimeout     time.Duration // Time after which a client is considered inactive
 }
 
-// Auth creates a middleware for authentication using JWT tokens
-func Auth() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Get the Authorization header
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
-			c.Abort()
-			return
-		}
-
-		// Check for Bearer token format
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization format, expected 'Bearer {token}'"})
-			c.Abort()
-			return
-		}
-		tokenString := parts[1]
-
-		// Parse and validate the token
-		token, err := auth.ValidateToken(tokenString)
-		if err != nil {
-			if errors.Is(err, jwt.ErrTokenExpired) {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Token expired"})
-			} else {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
-			}
-			c.Abort()
-			return
-		}
-
-		// Extract claims
-		claims, ok := token.Claims.(*auth.CustomClaims)
-		if !ok || !token.Valid {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
-			c.Abort()
-			return
-		}
-
-		// Convert string ID to UUID
-		userID, err := uuid.Parse(claims.UserID)
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID in token"})
-			c.Abort()
-			return
-		}
-
-		// Set user info in context
-		c.Set("userID", userID)
-		c.Set("username", claims.Username)
-		c.Set("userRole", claims.Role)
-
-		// Continue to the next handler
-		c.Next()
-	}
+// jwtAuthMiddleware implements AuthMiddleware using JWT
+type jwtAuthMiddleware struct {
+	logger logging.Logger
 }
 
-// OptionalAuth middleware that doesn't abort if no token is present
-// but adds user information to the context if a valid token exists
-func OptionalAuth() gin.HandlerFunc {
+// RequireAuth implements middleware that requires authentication
+func (m *jwtAuthMiddleware) RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get the Authorization header
-		authHeader := c.GetHeader("Authorization")
-
-		// If no auth header, just continue to the next handler
-		if authHeader == "" {
-			c.Next()
-			return
-		}
-
-		// Check for Bearer token format
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			// Invalid format but don't abort
-			c.Next()
-			return
-		}
-		tokenString := parts[1]
-
-		// Parse and validate the token
-		token, err := auth.ValidateToken(tokenString)
+		// Extract and validate token
+		token, err := m.extractToken(c)
 		if err != nil {
-			// Invalid token but don't abort
-			c.Next()
+			m.logger.Debug("Authentication failed", logging.Error(err))
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 			return
 		}
 
-		// Extract claims
-		claims, ok := token.Claims.(*auth.CustomClaims)
-		if !ok || !token.Valid {
-			// Invalid claims but don't abort
-			c.Next()
-			return
-		}
-
-		// Convert string ID to UUID
-		userID, err := uuid.Parse(claims.UserID)
-		if err != nil {
-			// Invalid user ID but don't abort
-			c.Next()
-			return
-		}
-
-		// Set user info in context
-		c.Set("userID", userID)
-		c.Set("username", claims.Username)
-		c.Set("userRole", claims.Role)
+		// Store user info in context
+		c.Set("userID", token.UserID)
+		c.Set("username", token.Username)
+		c.Set("userRole", token.Role)
 		c.Set("authenticated", true)
 
-		// Continue to the next handler
 		c.Next()
 	}
 }
 
-// RequireRole middleware that checks if the user has the required role
-func RequireRole(role string) gin.HandlerFunc {
+// RequireAdmin implements middleware that requires admin privileges
+func (m *jwtAuthMiddleware) RequireAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get user role from context (set by Auth middleware)
-		userRole, exists := c.Get("userRole")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
-			c.Abort()
+		// First require authentication
+		m.RequireAuth()(c)
+
+		// Check if request was aborted by the auth middleware
+		if c.IsAborted() {
 			return
 		}
 
-		// Check if the user has the required role
-		if userRole.(string) != role {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Insufficient permissions"})
-			c.Abort()
+		// Check role
+		role, exists := c.Get("userRole")
+		if !exists || role != "ADMIN" {
+			m.logger.Debug("Admin access denied",
+				logging.String("role", role.(string)),
+				logging.String("path", c.Request.URL.Path),
+			)
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Forbidden"})
 			return
 		}
 
-		// Continue to the next handler
 		c.Next()
 	}
+}
+
+// OptionalAuth implements middleware that makes authentication optional
+func (m *jwtAuthMiddleware) OptionalAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Try to extract token but don't abort on failure
+		token, err := m.extractToken(c)
+		if err == nil {
+			// Store user info in context
+			c.Set("userID", token.UserID)
+			c.Set("username", token.Username)
+			c.Set("userRole", token.Role)
+			c.Set("authenticated", true)
+		} else {
+			// Mark as unauthenticated
+			c.Set("authenticated", false)
+		}
+
+		c.Next()
+	}
+}
+
+// extractToken extracts and validates the JWT token from the request
+func (m *jwtAuthMiddleware) extractToken(c *gin.Context) (*auth.TokenClaims, error) {
+	// Get Authorization header
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		return nil, errors.New("missing authorization header")
+	}
+
+	// Check Bearer format
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return nil, errors.New("invalid authorization format")
+	}
+
+	// Extract token
+	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+	if tokenString == "" {
+		return nil, errors.New("empty token")
+	}
+
+	// Validate token
+	claims, err := auth.ValidateToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+
+	return claims, nil
 }

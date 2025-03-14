@@ -1,80 +1,129 @@
 package domain
 
 import (
+	"fmt"
 	"time"
 )
 
-// Config represents the complete application configuration
+// Config represents the application configuration
 type Config struct {
-	// Basic application settings
-	Environment string `mapstructure:"environment"`
-	Verbose     bool   `mapstructure:"verbose"`
-
-	// Server configuration - handles REST endpoint
+	// Server configuration
 	Server struct {
-		HTTPPort int `mapstructure:"http_port"`
+		Port         int           `mapstructure:"port" yaml:"port"`
+		Timeout      time.Duration `mapstructure:"timeout" yaml:"timeout"`
+		ReadTimeout  time.Duration `mapstructure:"read_timeout" yaml:"read_timeout"`
+		WriteTimeout time.Duration `mapstructure:"write_timeout" yaml:"write_timeout"`
+		TLS          struct {
+			Enabled  bool   `mapstructure:"enabled" yaml:"enabled"`
+			CertFile string `mapstructure:"cert_file" yaml:"cert_file"`
+			KeyFile  string `mapstructure:"key_file" yaml:"key_file"`
+		} `mapstructure:"tls" yaml:"tls"`
+	} `mapstructure:"server" yaml:"server"`
 
-		// Rate limiting settings to protect the server
-		RateLimit struct {
-			RequestsPerSecond int `mapstructure:"requests_per_second"`
-			BurstSize         int `mapstructure:"burst_size"`
-		} `mapstructure:"rate_limit"`
-	} `mapstructure:"server"`
-
-	// Database configuration - supports multiple database types
+	// Database configuration
 	Database struct {
-		Type     string `mapstructure:"type"`
-		Host     string `mapstructure:"host"`
-		Port     int    `mapstructure:"port"`
-		Name     string `mapstructure:"name"`
-		User     string `mapstructure:"user"`
-		Password string `mapstructure:"password"`
-
-		// Connection pool settings - crucial for handling 60M entries
-		PoolSize     int           `mapstructure:"pool_size"`
-		MaxIdleConns int           `mapstructure:"max_idle_conns"`
-		MaxOpenConns int           `mapstructure:"max_open_conns"`
-		ConnTimeout  time.Duration `mapstructure:"conn_timeout"`
-	} `mapstructure:"database"`
+		Type          string        `mapstructure:"type" yaml:"type"`
+		Host          string        `mapstructure:"host" yaml:"host"`
+		Port          int           `mapstructure:"port" yaml:"port"`
+		User          string        `mapstructure:"user" yaml:"user"`
+		Password      string        `mapstructure:"password" yaml:"password"`
+		Name          string        `mapstructure:"name" yaml:"name"`
+		SSLMode       string        `mapstructure:"sslmode" yaml:"sslmode"`
+		MaxOpenConns  int           `mapstructure:"max_open_conns" yaml:"max_open_conns"`
+		MaxIdleConns  int           `mapstructure:"max_idle_conns" yaml:"max_idle_conns"`
+		ConnLifetime  time.Duration `mapstructure:"conn_lifetime" yaml:"conn_lifetime"`
+	} `mapstructure:"database" yaml:"database"`
 
 	// Logging configuration
 	Logging struct {
-		Level    string `mapstructure:"level"`
-		Format   string `mapstructure:"format"`
-		FilePath string `mapstructure:"file_path"`
-	} `mapstructure:"logging"`
+		Level      string `mapstructure:"level" yaml:"level"`
+		Format     string `mapstructure:"format" yaml:"format"`
+		Output     string `mapstructure:"output" yaml:"output"`
+		FilePath   string `mapstructure:"file_path" yaml:"file_path"`
+		EnableFile bool   `mapstructure:"enable_file" yaml:"enable_file"`
+	} `mapstructure:"logging" yaml:"logging"`
 
-	// Authentication settings
+	// Authentication configuration
 	Auth struct {
-		JWTSecret       string        `mapstructure:"jwt_secret"`
-		TokenExpiration time.Duration `mapstructure:"token_expiration"`
-	} `mapstructure:"auth"`
+		JWTSecret            string        `mapstructure:"jwt_secret" yaml:"jwt_secret"`
+		AccessTokenDuration  time.Duration `mapstructure:"access_token_duration" yaml:"access_token_duration"`
+		RefreshTokenDuration time.Duration `mapstructure:"refresh_token_duration" yaml:"refresh_token_duration"`
+	} `mapstructure:"auth" yaml:"auth"`
+
+	// Cache configuration
+	Cache struct {
+		Type     string        `mapstructure:"type" yaml:"type"`
+		Address  string        `mapstructure:"address" yaml:"address"`
+		Password string        `mapstructure:"password" yaml:"password"`
+		DB       int           `mapstructure:"db" yaml:"db"`
+		TTL      time.Duration `mapstructure:"ttl" yaml:"ttl"`
+	} `mapstructure:"cache" yaml:"cache"`
+
+	// Environment and version information
+	Environment string `mapstructure:"environment" yaml:"environment"`
+	Version     string `mapstructure:"version" yaml:"version"`
 }
 
-// NewDefaultConfig returns a Config instance with sensible defaults
-func NewDefaultConfig() *Config {
-	cfg := &Config{}
+// Validate checks if the configuration is valid
+func (c *Config) Validate() error {
+	if c.Server.Port <= 0 {
+		return fmt.Errorf("server port must be positive")
+	}
 
-	// Set default values optimized for a dictionary with 60M entries
-	cfg.Environment = "development"
-	cfg.Verbose = false
+	if c.Database.Type == "" {
+		return fmt.Errorf("database type must be specified")
+	}
 
-	cfg.Server.HTTPPort = 8080
-	cfg.Server.RateLimit.RequestsPerSecond = 1000 // Adjusted for high-load
-	cfg.Server.RateLimit.BurstSize = 100
+	// Validate logging configuration
+	if c.Logging.Level == "" {
+		c.Logging.Level = "info"
+	}
 
-	cfg.Database.Type = "postgres" // Default to PostgreSQL for large datasets
-	cfg.Database.Host = "localhost"
-	cfg.Database.Port = 5432
-	cfg.Database.PoolSize = 20 // Higher pool size for better concurrency
-	cfg.Database.MaxIdleConns = 10
-	cfg.Database.MaxOpenConns = 100 // Higher limit for large-scale operations
-	cfg.Database.ConnTimeout = 30 * time.Second
+	if c.Logging.EnableFile && c.Logging.FilePath == "" {
+		return fmt.Errorf("log file path must be specified when file logging is enabled")
+	}
 
-	cfg.Logging.Level = "info"
-	cfg.Logging.Format = "json" // JSON format for better log processing
+	// Validate authentication configuration
+	if c.Auth.JWTSecret == "" {
+		return fmt.Errorf("JWT secret must be specified")
+	}
 
-	cfg.Auth.TokenExpiration = 24 * time.Hour
+	if c.Auth.AccessTokenDuration <= 0 {
+		return fmt.Errorf("access token duration must be positive")
+	}
 
-	return cfg
+	if c.Auth.RefreshTokenDuration <= 0 {
+		return fmt.Errorf("refresh token duration must be positive")
+	}
+
+	return nil
+}
+
+// GetDSN returns the database connection string
+func (c *Config) GetDSN() string {
+	switch c.Database.Type {
+	case "postgres":
+		return fmt.Sprintf(
+			"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+			c.Database.Host,
+			c.Database.Port,
+			c.Database.User,
+			c.Database.Password,
+			c.Database.Name,
+			c.Database.SSLMode,
+		)
+	case "mysql":
+		return fmt.Sprintf(
+			"%s:%s@tcp(%s:%d)/%s?parseTime=true",
+			c.Database.User,
+			c.Database.Password,
+			c.Database.Host,
+			c.Database.Port,
+			c.Database.Name,
+		)
+	case "sqlite":
+		return c.Database.Name
+	default:
+		return ""
+	}
 }

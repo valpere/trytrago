@@ -1,38 +1,79 @@
-# TryTraGo Application Configuration
+# TryTraGo Configuration
 
+# Server configuration
 server:
-  http:
-    port: 8080
-    timeout: 30s
-    read_timeout: 15s
-    write_timeout: 15s
+  # Server port
+  port: 8080
+  # Request timeout
+  timeout: 30s
+  # Read timeout
+  read_timeout: 15s
+  # Write timeout
+  write_timeout: 15s
+  # TLS configuration (optional)
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
 
+# Database configuration
 database:
-  type: postgres        # Options: postgres, mysql, sqlite
+  # Database type: postgres, mysql, sqlite
+  type: postgres
+  # Database host
   host: localhost
+  # Database port
   port: 5432
-  user: trytrago
-  password: password
-  database: trytrago
+  # Database user
+  user: postgres
+  # Database password
+  password: postgres
+  # Database name
+  name: trytrago
+  # SSL mode for PostgreSQL
   sslmode: disable
-  max_conns: 20
-  timeout: 30
+  # Connection pool settings
+  max_open_conns: 20
+  max_idle_conns: 10
+  conn_lifetime: 5m
 
-logger:
-  level: info           # Options: debug, info, warn, error
-  format: console       # Options: console, json
-  output: stdout        # Options: stdout, file
+# Logging configuration
+logging:
+  # Logging level: debug, info, warn, error
+  level: info
+  # Logging format: json, console
+  format: console
+  # Log output: stdout, stderr, file
+  output: stdout
+  # File path for file logging (if enabled)
+  file_path: ""
+  # Enable file logging
   enable_file: false
-  file_path: logs/trytrago.log
 
+# Authentication configuration
 auth:
-  jwt_secret: "your-secret-key-change-this-in-production"
+  # JWT secret key
+  jwt_secret: your-secret-key-change-this-in-production
+  # Access token duration
   access_token_duration: 1h
-  refresh_token_duration: 168h  # 7 days
+  # Refresh token duration
+  refresh_token_duration: 168h # 7 days
 
+# Cache configuration
 cache:
-  type: redis           # Options: redis, memory
+  # Cache type: redis, memory
+  type: redis
+  # Redis address
   address: localhost:6379
+  # Redis password
   password: ""
+  # Redis database
   db: 0
-  expiry: 3600          # Default TTL in seconds
+  # Default TTL
+  ttl: 10m
+
+# Environment: development, production
+environment: development
+
+# Version information (populated at build time)
+version: dev

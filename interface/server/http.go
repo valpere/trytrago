@@ -7,86 +7,63 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/valpere/trytrago/application/service"
+	"github.com/valpere/trytrago/domain"
 	"github.com/valpere/trytrago/domain/logging"
-	"github.com/valpere/trytrago/interface/api/rest"
 )
 
-// HTTPServer represents an HTTP server
+// HTTPServer represents the HTTP server implementation
 type HTTPServer struct {
-	addr      string
-	router    *gin.Engine
-	server    *http.Server
-	logger    logging.Logger
+	server *http.Server
+	logger logging.Logger
+	router *gin.Engine
+	config domain.Config
 }
 
 // NewHTTPServer creates a new HTTP server instance
-func NewHTTPServer(
-	port int,
-	logger logging.Logger,
-	entryService service.EntryService,
-	translationService service.TranslationService,
-	userService service.UserService,
-) *HTTPServer {
-	// Create router
-	router := rest.SetupRouter(logger, entryService, translationService, userService)
-
-	// Configure HTTP server
-	addr := fmt.Sprintf(":%d", port)
-	server := &http.Server{
-		Addr:           addr,
-		Handler:        router,
-		ReadTimeout:    15 * time.Second,
-		WriteTimeout:   15 * time.Second,
-		MaxHeaderBytes: 1 << 20, // 1 MB
-	}
-
+func NewHTTPServer(config domain.Config, logger logging.Logger, router *gin.Engine) Server {
 	return &HTTPServer{
-		addr:      addr,
-		router:    router,
-		server:    server,
-		logger:    logger.With(logging.String("component", "http_server")),
+		logger: logger.With(logging.String("component", "http_server")),
+		router: router,
+		config: config,
 	}
 }
 
 // Start starts the HTTP server
 func (s *HTTPServer) Start() error {
-	s.logger.Info("starting HTTP server", logging.String("address", s.addr))
+	serverConfig := s.config.Server
+	
+	s.server = &http.Server{
+		Addr:         fmt.Sprintf(":%d", serverConfig.Port),
+		Handler:      s.router,
+		ReadTimeout:  serverConfig.ReadTimeout,
+		WriteTimeout: serverConfig.WriteTimeout,
+		IdleTimeout:  120 * time.Second,
+	}
 
+	s.logger.Info("Starting HTTP server", logging.Int("port", serverConfig.Port))
+	
 	if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		s.logger.Error("failed to start HTTP server", logging.Error(err))
-		return fmt.Errorf("failed to start HTTP server: %w", err)
+		return fmt.Errorf("HTTP server error: %w", err)
 	}
-
+	
 	return nil
 }
 
-// StartTLS starts the HTTP server with TLS
-func (s *HTTPServer) StartTLS(certFile, keyFile string) error {
-	s.logger.Info("starting HTTPS server", logging.String("address", s.addr))
-
-	if err := s.server.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
-		s.logger.Error("failed to start HTTPS server", logging.Error(err))
-		return fmt.Errorf("failed to start HTTPS server: %w", err)
+// Shutdown gracefully stops the HTTP server
+func (s *HTTPServer) Shutdown(ctx context.Context) error {
+	s.logger.Info("Shutting down HTTP server")
+	
+	if s.server == nil {
+		return nil
 	}
-
-	return nil
-}
-
-// Stop gracefully stops the HTTP server
-func (s *HTTPServer) Stop(ctx context.Context) error {
-	s.logger.Info("stopping HTTP server")
-
-	if err := s.server.Shutdown(ctx); err != nil {
-		s.logger.Error("failed to shut down HTTP server", logging.Error(err))
-		return fmt.Errorf("failed to shut down HTTP server: %w", err)
+	
+	shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	
+	if err := s.server.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("HTTP server shutdown error: %w", err)
 	}
-
+	
 	s.logger.Info("HTTP server stopped")
 	return nil
-}
-
-// GetRouter returns the router
-func (s *HTTPServer) GetRouter() *gin.Engine {
-	return s.router
 }
