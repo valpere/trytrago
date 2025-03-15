@@ -11,7 +11,6 @@ import (
 	"github.com/valpere/trytrago/application/mapper"
 	"github.com/valpere/trytrago/domain/database/repository"
 	"github.com/valpere/trytrago/domain/logging"
-	"github.com/valpere/trytrago/domain/model"
 	"github.com/valpere/trytrago/infrastructure/auth"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -34,9 +33,6 @@ func NewUserService(repo repository.Repository, logger logging.Logger) UserServi
 func (s *userService) CreateUser(ctx context.Context, req *request.CreateUserRequest) (*response.UserResponse, error) {
 	s.logger.Debug("creating user", logging.String("username", req.Username))
 
-	// Validate unique username and email
-	// In a real implementation, we would check for duplicates in the database
-
 	// Create domain model from request
 	user := mapper.CreateUserRequestToModel(req)
 	user.ID = uuid.New()
@@ -52,16 +48,14 @@ func (s *userService) CreateUser(ctx context.Context, req *request.CreateUserReq
 	user.Password = string(hashedPassword)
 
 	// Persist to database
-	// In a real implementation, we would use a user repository
-	// For now, we'll simulate a successful creation
-
-	// Map domain model to response DTO
-	respPtr := mapper.UserToResponse(user)
-	if respPtr == nil {
-		return nil, fmt.Errorf("failed to map user to response")
+	if err := s.repo.CreateUser(ctx, user); err != nil {
+		s.logger.Error("failed to create user", logging.Error(err))
+		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	return respPtr, nil
+	// Map domain model to response DTO
+	resp := mapper.UserToResponse(user)
+	return resp, nil
 }
 
 // GetUser implements UserService.GetUser
@@ -69,23 +63,15 @@ func (s *userService) GetUser(ctx context.Context, id uuid.UUID) (*response.User
 	s.logger.Debug("getting user by ID", logging.String("id", id.String()))
 
 	// Fetch user from repository
-	// In a real implementation, we would query the database
-	// For now, we'll simulate a user retrieval
-
-	// Create a mock user
-	user := &model.User{
-		ID:        id,
-		Username:  "user" + id.String()[0:8],
-		Email:     "user" + id.String()[0:8] + "@example.com",
-		Avatar:    "",
-		Role:      model.RoleUser,
-		IsActive:  true,
-		CreatedAt: time.Now().UTC().Add(-24 * time.Hour),
-		UpdatedAt: time.Now().UTC(),
+	user, err := s.repo.GetUserByID(ctx, id)
+	if err != nil {
+		s.logger.Error("failed to get user", logging.Error(err), logging.String("id", id.String()))
+		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
 	// Map domain model to response DTO
-	return mapper.UserToResponse(user), nil
+	resp := mapper.UserToResponse(user)
+	return resp, nil
 }
 
 // UpdateUser implements UserService.UpdateUser
@@ -93,19 +79,10 @@ func (s *userService) UpdateUser(ctx context.Context, id uuid.UUID, req *request
 	s.logger.Debug("updating user", logging.String("id", id.String()))
 
 	// Fetch user from repository
-	// In a real implementation, we would query the database
-
-	// Create a mock user to update
-	user := &model.User{
-		ID:        id,
-		Username:  "user" + id.String()[0:8],
-		Email:     "user" + id.String()[0:8] + "@example.com",
-		Password:  "hashed_password",
-		Avatar:    "",
-		Role:      model.RoleUser,
-		IsActive:  true,
-		CreatedAt: time.Now().UTC().Add(-24 * time.Hour),
-		UpdatedAt: time.Now().UTC(),
+	user, err := s.repo.GetUserByID(ctx, id)
+	if err != nil {
+		s.logger.Error("failed to get user for update", logging.Error(err), logging.String("id", id.String()))
+		return nil, fmt.Errorf("failed to get user for update: %w", err)
 	}
 
 	// Apply updates
@@ -123,18 +100,24 @@ func (s *userService) UpdateUser(ctx context.Context, id uuid.UUID, req *request
 	}
 
 	// Persist to database
-	// In a real implementation, we would update the user in the database
+	if err := s.repo.UpdateUser(ctx, user); err != nil {
+		s.logger.Error("failed to update user", logging.Error(err), logging.String("id", id.String()))
+		return nil, fmt.Errorf("failed to update user: %w", err)
+	}
 
 	// Map domain model to response DTO
-	return mapper.UserToResponse(user), nil
+	resp := mapper.UserToResponse(user)
+	return resp, nil
 }
 
 // DeleteUser implements UserService.DeleteUser
 func (s *userService) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	s.logger.Debug("deleting user", logging.String("id", id.String()))
 
-	// Delete user from repository
-	// In a real implementation, we would delete from the database
+	if err := s.repo.DeleteUser(ctx, id); err != nil {
+		s.logger.Error("failed to delete user", logging.Error(err), logging.String("id", id.String()))
+		return fmt.Errorf("failed to delete user: %w", err)
+	}
 
 	return nil
 }
@@ -144,28 +127,16 @@ func (s *userService) Authenticate(ctx context.Context, req *request.AuthRequest
 	s.logger.Debug("authenticating user", logging.String("username", req.Username))
 
 	// Fetch user by username
-	// In a real implementation, we would query the database
-
-	// Create a mock user for authentication
-	userID := uuid.New()
-	user := &model.User{
-		ID:        userID,
-		Username:  req.Username,
-		Email:     req.Username + "@example.com",
-		Password:  "$2a$10$dBR5d8VTLjQvQOPiwbHCzuQUEVLvtvVSbG2pJUT3c4DHmfVCJNpou", // "password" hashed
-		Avatar:    "",
-		Role:      model.RoleUser,
-		IsActive:  true,
-		CreatedAt: time.Now().UTC().Add(-24 * time.Hour),
-		UpdatedAt: time.Now().UTC(),
+	user, err := s.repo.GetUserByUsername(ctx, req.Username)
+	if err != nil {
+		s.logger.Warn("authentication failed", logging.Error(err), logging.String("username", req.Username))
+		return nil, fmt.Errorf("invalid credentials")
 	}
 
 	// Verify password
-	err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password))
+	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password))
 	if err != nil {
-		s.logger.Warn("authentication failed: invalid password",
-			logging.String("username", req.Username),
-		)
+		s.logger.Warn("authentication failed", logging.Error(err), logging.String("username", req.Username))
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
@@ -182,9 +153,6 @@ func (s *userService) Authenticate(ctx context.Context, req *request.AuthRequest
 		s.logger.Error("failed to generate refresh token", logging.Error(err))
 		return nil, fmt.Errorf("authentication failed: %w", err)
 	}
-
-	// Create and save token record
-	// In a real implementation, we would persist the token to the database
 
 	// Update last login
 	user.LastLogin = &time.Time{}
@@ -213,9 +181,6 @@ func (s *userService) RefreshToken(ctx context.Context, refreshToken string) (*r
 		return nil, fmt.Errorf("invalid refresh token")
 	}
 
-	// Fetch user by ID
-	// In a real implementation, we would query the database
-
 	// Parse UUID from string
 	id, err := uuid.Parse(userID)
 	if err != nil {
@@ -223,17 +188,11 @@ func (s *userService) RefreshToken(ctx context.Context, refreshToken string) (*r
 		return nil, fmt.Errorf("invalid token")
 	}
 
-	// Create a mock user
-	user := &model.User{
-		ID:        id,
-		Username:  "user" + id.String()[0:8],
-		Email:     "user" + id.String()[0:8] + "@example.com",
-		Password:  "hashed_password",
-		Avatar:    "",
-		Role:      model.RoleUser,
-		IsActive:  true,
-		CreatedAt: time.Now().UTC().Add(-24 * time.Hour),
-		UpdatedAt: time.Now().UTC(),
+	// Fetch user by ID
+	user, err := s.repo.GetUserByID(ctx, id)
+	if err != nil {
+		s.logger.Error("failed to get user for token refresh", logging.Error(err), logging.String("userId", id.String()))
+		return nil, fmt.Errorf("invalid token")
 	}
 
 	// Generate new JWT token
@@ -249,9 +208,6 @@ func (s *userService) RefreshToken(ctx context.Context, refreshToken string) (*r
 		s.logger.Error("failed to generate refresh token", logging.Error(err))
 		return nil, fmt.Errorf("token refresh failed: %w", err)
 	}
-
-	// Create and save token record
-	// In a real implementation, we would update the token in the database
 
 	// Create response
 	userResp := mapper.UserToResponse(user)
@@ -295,14 +251,26 @@ func (s *userService) ListUserEntries(ctx context.Context, userID uuid.UUID, req
 		params.Filters["type = ?"] = req.Type
 	}
 
-	// In a real implementation, we would query the database
-	// For now, return an empty list as a placeholder
+	// Execute query
+	entries, err := s.repo.ListUserEntries(ctx, userID, params)
+	if err != nil {
+		s.logger.Error("failed to list user entries",
+			logging.Error(err),
+			logging.String("userId", userID.String()),
+		)
+		return nil, fmt.Errorf("failed to list user entries: %w", err)
+	}
 
+	// Map domain models to response DTOs
 	resp := &response.EntryListResponse{
-		Entries: []*response.EntryResponse{},
-		Total:   0,
+		Entries: make([]*response.EntryResponse, len(entries)),
+		Total:   len(entries),
 		Limit:   req.Limit,
 		Offset:  req.Offset,
+	}
+
+	for i, entry := range entries {
+		resp.Entries[i] = mapper.EntryToResponse(&entry)
 	}
 
 	return resp, nil
@@ -316,7 +284,7 @@ func (s *userService) ListUserTranslations(ctx context.Context, userID uuid.UUID
 		logging.Int("offset", req.Offset),
 	)
 
-	// In a real implementation, we would query the database
+	// In a real implementation, we would query the database for translations created by this user
 	// For now, return an empty list as a placeholder
 
 	resp := &response.TranslationListResponse{
@@ -337,7 +305,7 @@ func (s *userService) ListUserComments(ctx context.Context, userID uuid.UUID, re
 		logging.Int("offset", req.Offset),
 	)
 
-	// In a real implementation, we would query the database
+	// In a real implementation, we would query the database for comments created by this user
 	// For now, return an empty list as a placeholder
 
 	resp := &response.CommentListResponse{
@@ -358,7 +326,7 @@ func (s *userService) ListUserLikes(ctx context.Context, userID uuid.UUID, req *
 		logging.Int("offset", req.Offset),
 	)
 
-	// In a real implementation, we would query the database
+	// In a real implementation, we would query the database for likes created by this user
 	// For now, return an empty list as a placeholder
 
 	resp := &response.LikeListResponse{
