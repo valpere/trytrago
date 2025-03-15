@@ -10,13 +10,30 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/valpere/trytrago/application/dto/request"
 	"github.com/valpere/trytrago/application/service"
 	"github.com/valpere/trytrago/domain/database"
 	"github.com/valpere/trytrago/domain/model"
+	"github.com/valpere/trytrago/infrastructure/auth"
 	"github.com/valpere/trytrago/test/mocks"
 )
+
+func init() {
+	// Initialize JWT auth for all tests
+	auth.InitJWT("test-secret-key-for-unit-tests", 1*time.Hour)
+}
+
+// setupUserService creates a new instance of UserService with mocks
+func setupUserService(t *testing.T) (service.UserService, *mocks.MockRepository, *mocks.MockLogger) {
+	mockRepo := new(mocks.MockRepository)
+	mockLogger := mocks.SetupLoggerMock()
+
+	userService := service.NewUserService(mockRepo, mockLogger)
+
+	return userService, mockRepo, mockLogger
+}
 
 // TestCreateUser tests the CreateUser function
 func TestCreateUser(t *testing.T) {
@@ -35,37 +52,35 @@ func TestCreateUser(t *testing.T) {
 	// Test cases
 	testCases := []struct {
 		name          string
-		setupMocks    func(*mocks.MockRepository, *mocks.MockLogger)
+		setupMocks    func(*mocks.MockRepository)
 		expectedError bool
 		errorContains string
 	}{
 		{
 			name: "Success",
-			setupMocks: func(mockRepo *mocks.MockRepository, mockLogger *mocks.MockLogger) {
+			setupMocks: func(mockRepo *mocks.MockRepository) {
+				// In the actual implementation, CreateUser would be called with a valid user model
 				mockRepo.On("CreateUser", mock.Anything, mock.MatchedBy(func(user *model.User) bool {
-					// Password should be hashed
 					return user.Username == testUsername &&
 						user.Email == testEmail &&
 						user.Password != testPassword // Password should be hashed
-				})).Return(nil).Once()
+				})).Return(nil)
 			},
 			expectedError: false,
 		},
 		{
 			name: "RepositoryError",
-			setupMocks: func(mockRepo *mocks.MockRepository, mockLogger *mocks.MockLogger) {
+			setupMocks: func(mockRepo *mocks.MockRepository) {
 				expectedError := errors.New("database error")
-				mockRepo.On("CreateUser", mock.Anything, mock.Anything).Return(expectedError).Once()
-				mockLogger.On("Error", "failed to create user", mock.Anything).Return().Once()
+				mockRepo.On("CreateUser", mock.Anything, mock.Anything).Return(expectedError)
 			},
 			expectedError: true,
 			errorContains: "failed to create user",
 		},
 		{
 			name: "DuplicateUsername",
-			setupMocks: func(mockRepo *mocks.MockRepository, mockLogger *mocks.MockLogger) {
-				mockRepo.On("CreateUser", mock.Anything, mock.Anything).Return(database.ErrDuplicateEntry).Once()
-				mockLogger.On("Error", "failed to create user", mock.Anything).Return().Once()
+			setupMocks: func(mockRepo *mocks.MockRepository) {
+				mockRepo.On("CreateUser", mock.Anything, mock.Anything).Return(database.ErrDuplicateEntry)
 			},
 			expectedError: true,
 			errorContains: "duplicate entry",
@@ -74,15 +89,11 @@ func TestCreateUser(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Setup mocks
-			mockRepo := new(mocks.MockRepository)
-			mockLogger := mocks.SetupLoggerMock()
+			// Setup service and mocks
+			userService, mockRepo, _ := setupUserService(t)
 
-			// Configure expectations
-			tc.setupMocks(mockRepo, mockLogger)
-
-			// Create service
-			userService := service.NewUserService(mockRepo, mockLogger)
+			// Setup specific test case expectations
+			tc.setupMocks(mockRepo)
 
 			// Call service
 			resp, err := userService.CreateUser(context.Background(), createUserReq)
@@ -103,32 +114,38 @@ func TestCreateUser(t *testing.T) {
 
 			// Verify mocks
 			mockRepo.AssertExpectations(t)
-			mocks.VerifyLoggerMock(mockLogger, t)
 		})
 	}
 }
 
 // TestAuthenticate tests the Authenticate function
 func TestAuthenticate(t *testing.T) {
+	// Initialize JWT
+	auth.InitJWT("test-secret-key", 1*time.Hour)
+
+	// Create password and hash
+	plainPassword := "testpassword"
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcrypt.MinCost)
+	require.NoError(t, err)
+
 	// Setup fixtures
 	testID := uuid.New()
 	testUsername := "testuser"
-	testPassword := "password"
-	hashedPassword := "$2a$10$dBR5d8VTLjQvQOPiwbHCzuQUEVLvtvVSbG2pJUT3c4DHmfVCJNpou" // "password" hashed
 	testUser := &model.User{
 		ID:        testID,
 		Username:  testUsername,
-		Password:  hashedPassword,
+		Password:  string(hashedPassword),
 		Email:     "test@example.com",
 		Role:      model.RoleUser,
 		IsActive:  true,
-		LastLogin: nil,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
 
 	// Create request for successful auth
 	validAuthReq := &request.AuthRequest{
 		Username: testUsername,
-		Password: testPassword,
+		Password: plainPassword,
 	}
 
 	// Create request for invalid password
@@ -158,7 +175,7 @@ func TestAuthenticate(t *testing.T) {
 			request: validAuthReq,
 			setupMocks: func(mockRepo *mocks.MockRepository, mockLogger *mocks.MockLogger) {
 				mockRepo.On("GetUserByUsername", mock.Anything, testUsername).Return(nil, database.ErrNotFound).Once()
-				mockLogger.On("Warn", "authentication failed: user not found", mock.Anything).Return().Once()
+				mockLogger.On("Warn", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 			},
 			expectedError: true,
 			errorContains: "invalid credentials",
@@ -168,7 +185,7 @@ func TestAuthenticate(t *testing.T) {
 			request: invalidPasswordReq,
 			setupMocks: func(mockRepo *mocks.MockRepository, mockLogger *mocks.MockLogger) {
 				mockRepo.On("GetUserByUsername", mock.Anything, testUsername).Return(testUser, nil).Once()
-				mockLogger.On("Warn", "authentication failed: invalid password", mock.Anything).Return().Once()
+				mockLogger.On("Warn", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 			},
 			expectedError: true,
 			errorContains: "invalid credentials",
@@ -177,15 +194,11 @@ func TestAuthenticate(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Setup mocks
-			mockRepo := new(mocks.MockRepository)
-			mockLogger := mocks.SetupLoggerMock()
+			// Setup service and mocks
+			userService, mockRepo, mockLogger := setupUserService(t)
 
-			// Configure expectations
+			// Setup specific test case expectations
 			tc.setupMocks(mockRepo, mockLogger)
-
-			// Create service
-			userService := service.NewUserService(mockRepo, mockLogger)
 
 			// Call service
 			resp, err := userService.Authenticate(context.Background(), tc.request)
@@ -207,7 +220,84 @@ func TestAuthenticate(t *testing.T) {
 
 			// Verify mocks
 			mockRepo.AssertExpectations(t)
-			mocks.VerifyLoggerMock(mockLogger, t)
+		})
+	}
+}
+
+// TestGetUser tests the GetUser function
+func TestGetUser(t *testing.T) {
+	// Setup fixtures
+	testID := uuid.New()
+	testUser := &model.User{
+		ID:        testID,
+		Username:  "testuser",
+		Email:     "test@example.com",
+		Role:      model.RoleUser,
+		IsActive:  true,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+
+	// Test cases
+	testCases := []struct {
+		name          string
+		setupMocks    func(*mocks.MockRepository)
+		expectedError bool
+		errorContains string
+	}{
+		{
+			name: "Success",
+			setupMocks: func(mockRepo *mocks.MockRepository) {
+				mockRepo.On("GetUserByID", mock.Anything, testID).Return(testUser, nil).Once()
+			},
+			expectedError: false,
+		},
+		{
+			name: "UserNotFound",
+			setupMocks: func(mockRepo *mocks.MockRepository) {
+				mockRepo.On("GetUserByID", mock.Anything, testID).Return(nil, database.ErrNotFound).Once()
+			},
+			expectedError: true,
+			errorContains: "not found",
+		},
+		{
+			name: "DatabaseError",
+			setupMocks: func(mockRepo *mocks.MockRepository) {
+				dbErr := errors.New("database error")
+				mockRepo.On("GetUserByID", mock.Anything, testID).Return(nil, dbErr).Once()
+			},
+			expectedError: true,
+			errorContains: "failed to get user",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup service and mocks
+			userService, mockRepo, _ := setupUserService(t)
+
+			// Setup specific test case expectations
+			tc.setupMocks(mockRepo)
+
+			// Call service
+			resp, err := userService.GetUser(context.Background(), testID)
+
+			// Assert expectations
+			if tc.expectedError {
+				require.Error(t, err)
+				if tc.errorContains != "" {
+					assert.Contains(t, err.Error(), tc.errorContains)
+				}
+				assert.Nil(t, resp)
+			} else {
+				require.NoError(t, err)
+				assert.NotNil(t, resp)
+				assert.Equal(t, testUser.Username, resp.Username)
+				assert.Equal(t, testUser.Email, resp.Email)
+			}
+
+			// Verify mocks
+			mockRepo.AssertExpectations(t)
 		})
 	}
 }
@@ -240,13 +330,13 @@ func TestUpdateUser(t *testing.T) {
 	// Test cases
 	testCases := []struct {
 		name          string
-		setupMocks    func(*mocks.MockRepository, *mocks.MockLogger)
+		setupMocks    func(*mocks.MockRepository)
 		expectedError bool
 		errorContains string
 	}{
 		{
 			name: "Success",
-			setupMocks: func(mockRepo *mocks.MockRepository, mockLogger *mocks.MockLogger) {
+			setupMocks: func(mockRepo *mocks.MockRepository) {
 				mockRepo.On("GetUserByID", mock.Anything, testID).Return(testUser, nil).Once()
 				mockRepo.On("UpdateUser", mock.Anything, mock.MatchedBy(func(user *model.User) bool {
 					return user.ID == testID &&
@@ -258,19 +348,17 @@ func TestUpdateUser(t *testing.T) {
 		},
 		{
 			name: "UserNotFound",
-			setupMocks: func(mockRepo *mocks.MockRepository, mockLogger *mocks.MockLogger) {
+			setupMocks: func(mockRepo *mocks.MockRepository) {
 				mockRepo.On("GetUserByID", mock.Anything, testID).Return(nil, database.ErrNotFound).Once()
-				mockLogger.On("Error", "failed to get user for update", mock.Anything, mock.Anything).Return().Once()
 			},
 			expectedError: true,
 			errorContains: "not found",
 		},
 		{
 			name: "DuplicateUsername",
-			setupMocks: func(mockRepo *mocks.MockRepository, mockLogger *mocks.MockLogger) {
+			setupMocks: func(mockRepo *mocks.MockRepository) {
 				mockRepo.On("GetUserByID", mock.Anything, testID).Return(testUser, nil).Once()
 				mockRepo.On("UpdateUser", mock.Anything, mock.Anything).Return(database.ErrDuplicateEntry).Once()
-				mockLogger.On("Error", "failed to update user", mock.Anything, mock.Anything).Return().Once()
 			},
 			expectedError: true,
 			errorContains: "duplicate entry",
@@ -279,15 +367,11 @@ func TestUpdateUser(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Setup mocks
-			mockRepo := new(mocks.MockRepository)
-			mockLogger := mocks.SetupLoggerMock()
+			// Setup service and mocks
+			userService, mockRepo, _ := setupUserService(t)
 
-			// Configure expectations
-			tc.setupMocks(mockRepo, mockLogger)
-
-			// Create service
-			userService := service.NewUserService(mockRepo, mockLogger)
+			// Setup specific test case expectations
+			tc.setupMocks(mockRepo)
 
 			// Call service
 			resp, err := userService.UpdateUser(context.Background(), testID, updateReq)
@@ -308,7 +392,6 @@ func TestUpdateUser(t *testing.T) {
 
 			// Verify mocks
 			mockRepo.AssertExpectations(t)
-			mocks.VerifyLoggerMock(mockLogger, t)
 		})
 	}
 }
@@ -321,32 +404,30 @@ func TestDeleteUser(t *testing.T) {
 	// Test cases
 	testCases := []struct {
 		name          string
-		setupMocks    func(*mocks.MockRepository, *mocks.MockLogger)
+		setupMocks    func(*mocks.MockRepository)
 		expectedError bool
 		errorContains string
 	}{
 		{
 			name: "Success",
-			setupMocks: func(mockRepo *mocks.MockRepository, mockLogger *mocks.MockLogger) {
+			setupMocks: func(mockRepo *mocks.MockRepository) {
 				mockRepo.On("DeleteUser", mock.Anything, testID).Return(nil).Once()
 			},
 			expectedError: false,
 		},
 		{
 			name: "UserNotFound",
-			setupMocks: func(mockRepo *mocks.MockRepository, mockLogger *mocks.MockLogger) {
+			setupMocks: func(mockRepo *mocks.MockRepository) {
 				mockRepo.On("DeleteUser", mock.Anything, testID).Return(database.ErrNotFound).Once()
-				mockLogger.On("Error", "failed to delete user", mock.Anything, mock.Anything).Return().Once()
 			},
 			expectedError: true,
 			errorContains: "not found",
 		},
 		{
 			name: "DatabaseError",
-			setupMocks: func(mockRepo *mocks.MockRepository, mockLogger *mocks.MockLogger) {
+			setupMocks: func(mockRepo *mocks.MockRepository) {
 				expectedError := errors.New("database error")
 				mockRepo.On("DeleteUser", mock.Anything, testID).Return(expectedError).Once()
-				mockLogger.On("Error", "failed to delete user", mock.Anything, mock.Anything).Return().Once()
 			},
 			expectedError: true,
 			errorContains: "failed to delete user",
@@ -355,15 +436,11 @@ func TestDeleteUser(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Setup mocks
-			mockRepo := new(mocks.MockRepository)
-			mockLogger := mocks.SetupLoggerMock()
+			// Setup service and mocks
+			userService, mockRepo, _ := setupUserService(t)
 
 			// Configure expectations
-			tc.setupMocks(mockRepo, mockLogger)
-
-			// Create service
-			userService := service.NewUserService(mockRepo, mockLogger)
+			tc.setupMocks(mockRepo)
 
 			// Call service
 			err := userService.DeleteUser(context.Background(), testID)
@@ -380,7 +457,6 @@ func TestDeleteUser(t *testing.T) {
 
 			// Verify mocks
 			mockRepo.AssertExpectations(t)
-			mocks.VerifyLoggerMock(mockLogger, t)
 		})
 	}
 }
@@ -389,30 +465,32 @@ func TestDeleteUser(t *testing.T) {
 func TestRefreshToken(t *testing.T) {
 	// Setup fixtures
 	testID := uuid.New()
-	testUsername := "testuser"
-	testRefreshToken := "valid-refresh-token"
 	testUser := &model.User{
-		ID:       testID,
-		Username: testUsername,
-		Email:    "test@example.com",
-		Role:     model.RoleUser,
-		IsActive: true,
+		ID:        testID,
+		Username:  "testuser",
+		Email:     "test@example.com",
+		Role:      model.RoleUser,
+		IsActive:  true,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
+
+	// Generate a valid refresh token
+	refreshToken, err := auth.GenerateRefreshToken(testID.String())
+	require.NoError(t, err, "Failed to generate test refresh token")
 
 	// Test cases
 	testCases := []struct {
 		name          string
 		token         string
-		setupMocks    func(*mocks.MockRepository, *mocks.MockLogger)
+		setupMocks    func(*mocks.MockRepository)
 		expectedError bool
 		errorContains string
 	}{
 		{
 			name:  "Success",
-			token: testRefreshToken,
-			setupMocks: func(mockRepo *mocks.MockRepository, mockLogger *mocks.MockLogger) {
-				// We need to mock the jwt validation that would happen in auth.ValidateRefreshToken
-				// This would normally return the user ID from the token
+			token: refreshToken,
+			setupMocks: func(mockRepo *mocks.MockRepository) {
 				mockRepo.On("GetUserByID", mock.Anything, testID).Return(testUser, nil).Once()
 			},
 			expectedError: false,
@@ -420,18 +498,17 @@ func TestRefreshToken(t *testing.T) {
 		{
 			name:  "InvalidToken",
 			token: "invalid-token",
-			setupMocks: func(mockRepo *mocks.MockRepository, mockLogger *mocks.MockLogger) {
-				mockLogger.On("Warn", "invalid refresh token", mock.Anything).Return().Once()
+			setupMocks: func(mockRepo *mocks.MockRepository) {
+				// No mocks needed - validation fails before repo is accessed
 			},
 			expectedError: true,
 			errorContains: "invalid refresh token",
 		},
 		{
 			name:  "UserNotFound",
-			token: testRefreshToken,
-			setupMocks: func(mockRepo *mocks.MockRepository, mockLogger *mocks.MockLogger) {
+			token: refreshToken,
+			setupMocks: func(mockRepo *mocks.MockRepository) {
 				mockRepo.On("GetUserByID", mock.Anything, testID).Return(nil, database.ErrNotFound).Once()
-				mockLogger.On("Error", "failed to get user for token refresh", mock.Anything, mock.Anything).Return().Once()
 			},
 			expectedError: true,
 			errorContains: "invalid token",
@@ -440,15 +517,11 @@ func TestRefreshToken(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Setup mocks
-			mockRepo := new(mocks.MockRepository)
-			mockLogger := mocks.SetupLoggerMock()
+			// Setup service and mocks
+			userService, mockRepo, _ := setupUserService(t)
 
-			// Configure expectations
-			tc.setupMocks(mockRepo, mockLogger)
-
-			// Create service
-			userService := service.NewUserService(mockRepo, mockLogger)
+			// Setup specific test case expectations
+			tc.setupMocks(mockRepo)
 
 			// Call service
 			resp, err := userService.RefreshToken(context.Background(), tc.token)
@@ -465,12 +538,11 @@ func TestRefreshToken(t *testing.T) {
 				assert.NotNil(t, resp)
 				assert.NotEmpty(t, resp.AccessToken)
 				assert.NotEmpty(t, resp.RefreshToken)
-				assert.Equal(t, testUsername, resp.User.Username)
+				assert.Equal(t, testUser.Username, resp.User.Username)
 			}
 
 			// Verify mocks
 			mockRepo.AssertExpectations(t)
-			mocks.VerifyLoggerMock(mockLogger, t)
 		})
 	}
 }

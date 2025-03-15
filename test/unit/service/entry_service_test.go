@@ -20,11 +20,7 @@ import (
 // setupEntryService sets up a mock repository and logger for entry service tests
 func setupEntryService(t *testing.T) (service.EntryService, *mocks.MockRepository, *mocks.MockLogger) {
 	mockRepo := new(mocks.MockRepository)
-	mockLogger := new(mocks.MockLogger)
-
-	// Set up standard logger behavior
-	mockLogger.On("With", mock.Anything).Return(mockLogger)
-	mockLogger.On("Debug", mock.Anything, mock.Anything).Return().Maybe()
+	mockLogger := mocks.SetupLoggerMock()
 
 	// Create the service
 	entryService := service.NewEntryService(mockRepo, mockLogger)
