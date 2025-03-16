@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/valpere/trytrago/domain/database"
 	"github.com/valpere/trytrago/domain/database/repository"
+	"github.com/valpere/trytrago/domain/model"
 )
 
 type dbrepo struct {
@@ -398,6 +399,141 @@ func (r *dbrepo) GetEntryHistory(ctx context.Context, entryID uuid.UUID) ([]data
 	return history, nil
 }
 
+// CountLikes counts the number of likes for a specific target
+func (r *dbrepo) CountLikes(ctx context.Context, targetType string, targetID uuid.UUID) (int64, error) {
+	var count int64
+
+	// Use a SQL query to count likes
+	query := `SELECT COUNT(*) FROM likes WHERE target_type = ? AND target_id = ? AND deleted_at IS NULL`
+
+	err := r.db.WithContext(ctx).Raw(query, targetType, targetID).Scan(&count).Error
+	if err != nil {
+		return 0, database.NewDatabaseError(err, "count", "likes")
+	}
+
+	return count, nil
+}
+
+// CreateComment creates a new comment
+func (r *dbrepo) CreateComment(ctx context.Context, comment *model.Comment) error {
+	if comment.ID == uuid.Nil {
+		comment.ID = uuid.New()
+	}
+
+	now := time.Now().UTC()
+	if comment.CreatedAt.IsZero() {
+		comment.CreatedAt = now
+	}
+	if comment.UpdatedAt.IsZero() {
+		comment.UpdatedAt = now
+	}
+
+	result := r.db.WithContext(ctx).Create(comment)
+	if result.Error != nil {
+		return database.NewDatabaseError(result.Error, "create", "comments")
+	}
+
+	return nil
+}
+
+// GetCommentByID retrieves a comment by its ID
+func (r *dbrepo) GetCommentByID(ctx context.Context, id uuid.UUID) (*model.Comment, error) {
+	var comment model.Comment
+
+	result := r.db.WithContext(ctx).First(&comment, "id = ?", id)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, database.ErrNotFound
+		}
+		return nil, database.NewDatabaseError(result.Error, "query", "comments")
+	}
+
+	return &comment, nil
+}
+
+// ListComments lists comments for a specific target
+func (r *dbrepo) ListComments(ctx context.Context, targetType string, targetID uuid.UUID) ([]model.Comment, error) {
+	var comments []model.Comment
+
+	result := r.db.WithContext(ctx).
+		Where("target_type = ? AND target_id = ?", targetType, targetID).
+		Order("created_at DESC").
+		Find(&comments)
+
+	if result.Error != nil {
+		return nil, database.NewDatabaseError(result.Error, "list", "comments")
+	}
+
+	return comments, nil
+}
+
+// DeleteComment deletes a comment
+func (r *dbrepo) DeleteComment(ctx context.Context, id uuid.UUID) error {
+	result := r.db.WithContext(ctx).Delete(&model.Comment{}, "id = ?", id)
+	if result.Error != nil {
+		return database.NewDatabaseError(result.Error, "delete", "comments")
+	}
+
+	if result.RowsAffected == 0 {
+		return database.ErrNotFound
+	}
+
+	return nil
+}
+
+// CreateLike creates a new like
+func (r *dbrepo) CreateLike(ctx context.Context, like *model.Like) error {
+	if like.ID == uuid.Nil {
+		like.ID = uuid.New()
+	}
+
+	if like.CreatedAt.IsZero() {
+		like.CreatedAt = time.Now().UTC()
+	}
+
+	result := r.db.WithContext(ctx).Create(like)
+	if result.Error != nil {
+		return database.NewDatabaseError(result.Error, "create", "likes")
+	}
+
+	return nil
+}
+
+// DeleteLike deletes a like
+func (r *dbrepo) DeleteLike(ctx context.Context, userID uuid.UUID, targetType string, targetID uuid.UUID) error {
+	result := r.db.WithContext(ctx).
+		Where("user_id = ? AND target_type = ? AND target_id = ?", userID, targetType, targetID).
+		Delete(&model.Like{})
+
+	if result.Error != nil {
+		return database.NewDatabaseError(result.Error, "delete", "likes")
+	}
+
+	if result.RowsAffected == 0 {
+		return database.ErrNotFound
+	}
+
+	return nil
+}
+
+// GetLike gets a like by user ID, target type, and target ID
+func (r *dbrepo) GetLike(ctx context.Context, userID uuid.UUID, targetType string, targetID uuid.UUID) (*model.Like, error) {
+	var like model.Like
+
+	result := r.db.WithContext(ctx).
+		Where("user_id = ? AND target_type = ? AND target_id = ?", userID, targetType, targetID).
+		First(&like)
+
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, database.ErrNotFound
+		}
+		return nil, database.NewDatabaseError(result.Error, "query", "likes")
+	}
+
+	return &like, nil
+}
+
 // WithTransaction is a helper for handling nested transactions
 func (r *dbrepo) WithTransaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	tx := r.db.WithContext(ctx).Begin()
@@ -427,4 +563,134 @@ func (r *dbrepo) WithTransaction(ctx context.Context, fn func(tx *gorm.DB) error
 // GetDB returns the underlying gorm.DB instance
 func (r *dbrepo) GetDB() (*gorm.DB, error) {
 	return r.db, nil
+}
+
+// ListUserEntries lists entries created by a specific user
+func (r *dbrepo) ListUserEntries(ctx context.Context, userID uuid.UUID, params repository.ListParams) ([]database.Entry, error) {
+	var entries []database.Entry
+	query := r.db.WithContext(ctx).Where("created_by_id = ?", userID)
+
+	// Apply additional filters
+	for key, value := range params.Filters {
+		query = query.Where(key, value)
+	}
+
+	// Apply sorting
+	if params.SortBy != "" {
+		direction := "ASC"
+		if params.SortDesc {
+			direction = "DESC"
+		}
+		query = query.Order(fmt.Sprintf("%s %s", params.SortBy, direction))
+	} else {
+		query = query.Order("updated_at DESC")
+	}
+
+	// Apply pagination
+	limit := params.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	offset := params.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	query = query.Limit(limit).Offset(offset)
+
+	// Execute query
+	result := query.Find(&entries)
+	if result.Error != nil {
+		return nil, database.NewDatabaseError(result.Error, "list", "entries")
+	}
+
+	return entries, nil
+}
+
+// User operations
+func (r *dbrepo) CreateUser(ctx context.Context, user *model.User) error {
+	if user.ID == uuid.Nil {
+		user.ID = uuid.New()
+	}
+
+	// Set timestamps if not already set
+	now := time.Now().UTC()
+	if user.CreatedAt.IsZero() {
+		user.CreatedAt = now
+	}
+	if user.UpdatedAt.IsZero() {
+		user.UpdatedAt = now
+	}
+
+	result := r.db.WithContext(ctx).Create(user)
+	if result.Error != nil {
+		return database.NewDatabaseError(result.Error, "create", "users")
+	}
+
+	return nil
+}
+
+func (r *dbrepo) GetUserByID(ctx context.Context, id uuid.UUID) (*model.User, error) {
+	var user model.User
+
+	result := r.db.WithContext(ctx).First(&user, "id = ?", id)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, database.ErrNotFound
+		}
+		return nil, database.NewDatabaseError(result.Error, "query", "users")
+	}
+
+	return &user, nil
+}
+
+func (r *dbrepo) GetUserByUsername(ctx context.Context, username string) (*model.User, error) {
+	var user model.User
+
+	result := r.db.WithContext(ctx).First(&user, "username = ?", username)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, database.ErrNotFound
+		}
+		return nil, database.NewDatabaseError(result.Error, "query", "users")
+	}
+
+	return &user, nil
+}
+
+func (r *dbrepo) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
+	var user model.User
+
+	result := r.db.WithContext(ctx).First(&user, "email = ?", email)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, database.ErrNotFound
+		}
+		return nil, database.NewDatabaseError(result.Error, "query", "users")
+	}
+
+	return &user, nil
+}
+
+func (r *dbrepo) UpdateUser(ctx context.Context, user *model.User) error {
+	user.UpdatedAt = time.Now().UTC()
+
+	result := r.db.WithContext(ctx).Save(user)
+	if result.Error != nil {
+		return database.NewDatabaseError(result.Error, "update", "users")
+	}
+
+	return nil
+}
+
+func (r *dbrepo) DeleteUser(ctx context.Context, id uuid.UUID) error {
+	result := r.db.WithContext(ctx).Delete(&model.User{}, "id = ?", id)
+	if result.Error != nil {
+		return database.NewDatabaseError(result.Error, "delete", "users")
+	}
+
+	if result.RowsAffected == 0 {
+		return database.ErrNotFound
+	}
+
+	return nil
 }

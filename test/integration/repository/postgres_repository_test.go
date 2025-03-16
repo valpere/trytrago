@@ -262,7 +262,7 @@ func (s *PostgresRepositoryTestSuite) TestDeleteEntry() {
 }
 
 // TestListEntries tests the ListEntries method
-func (s *PostgresRepositoryTestSuite) TestListEntries(t *testing.T) {
+func (s *PostgresRepositoryTestSuite) TestListEntries() {
 	// Create test entries
 	entries := []database.Entry{
 		{
@@ -298,19 +298,19 @@ func (s *PostgresRepositoryTestSuite) TestListEntries(t *testing.T) {
 	}
 
 	// Test listing entries with no filters
-	t.Run("NoFilters", func(t *testing.T) {
+	s.Run("NoFilters", func() {
 		params := repository.ListParams{
 			Limit:  10,
 			Offset: 0,
 		}
 
 		results, err := s.repo.ListEntries(s.ctx, params)
-		assert.NoError(t, err, "Failed to list entries")
-		assert.GreaterOrEqual(t, len(results), 3, "Should have at least 3 entries")
+		assert.NoError(s.T(), err, "Failed to list entries")
+		assert.GreaterOrEqual(s.T(), len(results), 3, "Should have at least 3 entries")
 	})
 
 	// Test listing entries with word filter
-	t.Run("WordFilter", func(t *testing.T) {
+	s.Run("WordFilter", func() {
 		params := repository.ListParams{
 			Limit:   10,
 			Offset:  0,
@@ -318,12 +318,12 @@ func (s *PostgresRepositoryTestSuite) TestListEntries(t *testing.T) {
 		}
 
 		results, err := s.repo.ListEntries(s.ctx, params)
-		assert.NoError(t, err, "Failed to list entries")
-		assert.Len(t, results, 3, "Should have 3 entries matching filter")
+		assert.NoError(s.T(), err, "Failed to list entries")
+		assert.Len(s.T(), results, 3, "Should have 3 entries matching filter")
 	})
 
 	// Test listing entries with type filter
-	t.Run("TypeFilter", func(t *testing.T) {
+	s.Run("TypeFilter", func() {
 		params := repository.ListParams{
 			Limit:   10,
 			Offset:  0,
@@ -331,29 +331,29 @@ func (s *PostgresRepositoryTestSuite) TestListEntries(t *testing.T) {
 		}
 
 		results, err := s.repo.ListEntries(s.ctx, params)
-		assert.NoError(t, err, "Failed to list entries")
-		assert.GreaterOrEqual(t, len(results), 1, "Should have at least 1 entry of type PHRASE")
+		assert.NoError(s.T(), err, "Failed to list entries")
+		assert.GreaterOrEqual(s.T(), len(results), 1, "Should have at least 1 entry of type PHRASE")
 
 		for _, entry := range results {
-			assert.Equal(t, database.PhraseType, entry.Type, "Entry should be of type PHRASE")
+			assert.Equal(s.T(), database.PhraseType, entry.Type, "Entry should be of type PHRASE")
 		}
 	})
 
 	// Test pagination
-	t.Run("Pagination", func(t *testing.T) {
+	s.Run("Pagination", func() {
 		params := repository.ListParams{
 			Limit:  2,
 			Offset: 0,
 		}
 
 		results, err := s.repo.ListEntries(s.ctx, params)
-		assert.NoError(t, err, "Failed to list entries")
-		assert.Len(t, results, 2, "Should have 2 entries (limit)")
+		assert.NoError(s.T(), err, "Failed to list entries")
+		assert.Len(s.T(), results, 2, "Should have 2 entries (limit)")
 
 		params.Offset = 2
 		results, err = s.repo.ListEntries(s.ctx, params)
-		assert.NoError(t, err, "Failed to list entries")
-		assert.GreaterOrEqual(t, len(results), 1, "Should have at least 1 entry (next page)")
+		assert.NoError(s.T(), err, "Failed to list entries")
+		assert.GreaterOrEqual(s.T(), len(results), 1, "Should have at least 1 entry (next page)")
 	})
 }
 
