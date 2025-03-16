@@ -334,59 +334,67 @@ func (s *SQLiteRepositoryTestSuite) TestListEntries() {
 	}
 
 	// Test listing all entries
-	params := repository.ListParams{
-		Limit:  100,
-		Offset: 0,
-	}
+	s.Run("AllEntries", func() {
+		params := repository.ListParams{
+			Limit:  100,
+			Offset: 0,
+		}
 
-	results, err := s.repo.ListEntries(s.ctx, params)
-	assert.NoError(s.T(), err, "Failed to list entries")
-	assert.GreaterOrEqual(s.T(), len(results), 3, "Should have at least 3 entries")
+		results, err := s.repo.ListEntries(s.ctx, params)
+		assert.NoError(s.T(), err, "Failed to list entries")
+		assert.GreaterOrEqual(s.T(), len(results), 3, "Should have at least 3 entries")
+	})
 
 	// Test filtering by word
-	params = repository.ListParams{
-		Limit:   100,
-		Offset:  0,
-		Filters: map[string]interface{}{"word LIKE ?": "%sqlite_list_test_%"},
-	}
+	s.Run("WordFilter", func() {
+		params := repository.ListParams{
+			Limit:   100,
+			Offset:  0,
+			Filters: map[string]interface{}{"word LIKE ?": "%sqlite_list_test_%"},
+		}
 
-	results, err = s.repo.ListEntries(s.ctx, params)
-	assert.NoError(s.T(), err, "Failed to list entries with word filter")
-	assert.Len(s.T(), results, 3, "Should have exactly 3 entries matching the filter")
+		results, err := s.repo.ListEntries(s.ctx, params)
+		assert.NoError(s.T(), err, "Failed to list entries with word filter")
+		assert.Len(s.T(), results, 3, "Should have exactly 3 entries matching the filter")
+	})
 
 	// Test filtering by type
-	params = repository.ListParams{
-		Limit:   100,
-		Offset:  0,
-		Filters: map[string]interface{}{"type = ?": string(database.PhraseType)},
-	}
-
-	results, err = s.repo.ListEntries(s.ctx, params)
-	assert.NoError(s.T(), err, "Failed to list entries with type filter")
-	assert.GreaterOrEqual(s.T(), len(results), 1, "Should have at least 1 entry of type PHRASE")
-
-	// Verify all results are of type PHRASE
-	for _, entry := range results {
-		if entry.Word == "sqlite_list_test_3" {
-			assert.Equal(s.T(), database.PhraseType, entry.Type, "Entry should be of type PHRASE")
+	s.Run("TypeFilter", func() {
+		params := repository.ListParams{
+			Limit:   100,
+			Offset:  0,
+			Filters: map[string]interface{}{"type = ?": string(database.PhraseType)},
 		}
-	}
+
+		results, err := s.repo.ListEntries(s.ctx, params)
+		assert.NoError(s.T(), err, "Failed to list entries with type filter")
+		assert.GreaterOrEqual(s.T(), len(results), 1, "Should have at least 1 entry of type PHRASE")
+
+		// Verify all results are of type PHRASE
+		for _, entry := range results {
+			if entry.Word == "sqlite_list_test_3" {
+				assert.Equal(s.T(), database.PhraseType, entry.Type, "Entry should be of type PHRASE")
+			}
+		}
+	})
 
 	// Test pagination
-	params = repository.ListParams{
-		Limit:  2,
-		Offset: 0,
-	}
+	s.Run("Pagination", func() {
+		params := repository.ListParams{
+			Limit:  2,
+			Offset: 0,
+		}
 
-	results, err = s.repo.ListEntries(s.ctx, params)
-	assert.NoError(s.T(), err, "Failed to list entries with pagination")
-	assert.Len(s.T(), results, 2, "Should have 2 entries due to limit")
+		results, err := s.repo.ListEntries(s.ctx, params)
+		assert.NoError(s.T(), err, "Failed to list entries with pagination")
+		assert.Len(s.T(), results, 2, "Should have 2 entries due to limit")
 
-	// Test next page
-	params.Offset = 2
-	nextResults, err := s.repo.ListEntries(s.ctx, params)
-	assert.NoError(s.T(), err, "Failed to list entries for second page")
-	assert.NotEmpty(s.T(), nextResults, "Second page should not be empty")
+		// Test next page
+		params.Offset = 2
+		nextResults, err := s.repo.ListEntries(s.ctx, params)
+		assert.NoError(s.T(), err, "Failed to list entries for second page")
+		assert.NotEmpty(s.T(), nextResults, "Second page should not be empty")
+	})
 }
 
 // TestFindTranslations tests the FindTranslations method
@@ -438,31 +446,41 @@ func (s *SQLiteRepositoryTestSuite) TestFindTranslations() {
 	assert.NoError(s.T(), err, "Failed to create entry with translations")
 
 	// Test finding translations for "hello" in French
-	translations, err := s.repo.FindTranslations(s.ctx, "hello", "fr")
-	assert.NoError(s.T(), err, "Failed to find translations")
-	assert.Len(s.T(), translations, 1, "Should have 1 French translation")
-	assert.Equal(s.T(), "bonjour", translations[0].Text, "Translation text should match")
+	s.Run("FrenchTranslation", func() {
+		translations, err := s.repo.FindTranslations(s.ctx, "hello", "fr")
+		assert.NoError(s.T(), err, "Failed to find translations")
+		assert.Len(s.T(), translations, 1, "Should have 1 French translation")
+		assert.Equal(s.T(), "bonjour", translations[0].Text, "Translation text should match")
+	})
 
 	// Test finding translations for "hello" in Spanish
-	translations, err = s.repo.FindTranslations(s.ctx, "hello", "es")
-	assert.NoError(s.T(), err, "Failed to find translations")
-	assert.Len(s.T(), translations, 1, "Should have 1 Spanish translation")
-	assert.Equal(s.T(), "hola", translations[0].Text, "Translation text should match")
+	s.Run("SpanishTranslation", func() {
+		translations, err := s.repo.FindTranslations(s.ctx, "hello", "es")
+		assert.NoError(s.T(), err, "Failed to find translations")
+		assert.Len(s.T(), translations, 1, "Should have 1 Spanish translation")
+		assert.Equal(s.T(), "hola", translations[0].Text, "Translation text should match")
+	})
 
 	// Test case insensitivity
-	translations, err = s.repo.FindTranslations(s.ctx, "Hello", "fr")
-	assert.NoError(s.T(), err, "Failed to find translations with case insensitive search")
-	assert.Len(s.T(), translations, 1, "Should have 1 French translation despite case difference")
+	s.Run("CaseInsensitiveSearch", func() {
+		translations, err := s.repo.FindTranslations(s.ctx, "Hello", "fr")
+		assert.NoError(s.T(), err, "Failed to find translations with case insensitive search")
+		assert.Len(s.T(), translations, 1, "Should have 1 French translation despite case difference")
+	})
 
 	// Test non-existent language
-	translations, err = s.repo.FindTranslations(s.ctx, "hello", "de")
-	assert.NoError(s.T(), err, "Should not error for non-existent language")
-	assert.Empty(s.T(), translations, "Should have no German translations")
+	s.Run("NonExistentLanguage", func() {
+		translations, err := s.repo.FindTranslations(s.ctx, "hello", "de")
+		assert.NoError(s.T(), err, "Should not error for non-existent language")
+		assert.Empty(s.T(), translations, "Should have no German translations")
+	})
 
 	// Test non-existent word
-	translations, err = s.repo.FindTranslations(s.ctx, "goodbye", "fr")
-	assert.NoError(s.T(), err, "Should not error for non-existent word")
-	assert.Empty(s.T(), translations, "Should have no translations for non-existent word")
+	s.Run("NonExistentWord", func() {
+		translations, err := s.repo.FindTranslations(s.ctx, "goodbye", "fr")
+		assert.NoError(s.T(), err, "Should not error for non-existent word")
+		assert.Empty(s.T(), translations, "Should have no translations for non-existent word")
+	})
 }
 
 // TestRecordAndRetrieveChangeHistory tests the RecordChange and GetEntryHistory methods
