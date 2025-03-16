@@ -42,10 +42,16 @@ test-integration: ## Run integration tests
 # Run API tests
 test-api: ## Run API endpoint and auth flow tests
 	go test -v ./test/api/...
-# 	go test -v ./test/auth/...
+
+# Authentication flow tests
+.PHONY: test-auth
+test-auth:
+	@echo "Running authentication flow tests..."
+	@go test -v ./test/auth/...
 
 # Run all tests
-test-all: test-unit test-integration test-api ## Run all tests
+test-all: test-unit test-integration test-api  test-auth ## Run all tests
+	@echo "All tests passed!"
 
 # Default test command runs unit tests
 test: test-unit ## Run unit tests (default)

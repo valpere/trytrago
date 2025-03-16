@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/valpere/trytrago/domain/logging"
 	"github.com/valpere/trytrago/infrastructure/auth"
 
@@ -36,8 +37,16 @@ func (m *jwtAuthMiddleware) RequireAuth() gin.HandlerFunc {
 			return
 		}
 
+		// Parse user ID string to UUID
+		userID, err := uuid.Parse(token.UserID)
+		if err != nil {
+			m.logger.Error("Invalid user ID in token", logging.Error(err))
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid authentication token"})
+			return
+		}
+
 		// Store user info in context
-		c.Set("userID", token.UserID)
+		c.Set("userID", userID)
 		c.Set("username", token.Username)
 		c.Set("userRole", token.Role)
 		c.Set("authenticated", true)
@@ -50,18 +59,31 @@ func (m *jwtAuthMiddleware) RequireAuth() gin.HandlerFunc {
 func (m *jwtAuthMiddleware) RequireAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// First require authentication
-		m.RequireAuth()(c)
-
-		// Check if request was aborted by the auth middleware
-		if c.IsAborted() {
+		token, err := m.extractToken(c)
+		if err != nil {
+			m.logger.Debug("Authentication failed", logging.Error(err))
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 			return
 		}
 
+		// Parse user ID string to UUID
+		userID, err := uuid.Parse(token.UserID)
+		if err != nil {
+			m.logger.Error("Invalid user ID in token", logging.Error(err))
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid authentication token"})
+			return
+		}
+
+		// Store user info in context
+		c.Set("userID", userID)
+		c.Set("username", token.Username)
+		c.Set("userRole", token.Role)
+		c.Set("authenticated", true)
+
 		// Check role
-		role, exists := c.Get("userRole")
-		if !exists || role != "ADMIN" {
+		if token.Role != "ADMIN" {
 			m.logger.Debug("Admin access denied",
-				logging.String("role", role.(string)),
+				logging.String("role", token.Role),
 				logging.String("path", c.Request.URL.Path),
 			)
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Forbidden"})
@@ -78,11 +100,18 @@ func (m *jwtAuthMiddleware) OptionalAuth() gin.HandlerFunc {
 		// Try to extract token but don't abort on failure
 		token, err := m.extractToken(c)
 		if err == nil {
-			// Store user info in context
-			c.Set("userID", token.UserID)
-			c.Set("username", token.Username)
-			c.Set("userRole", token.Role)
-			c.Set("authenticated", true)
+			// Parse user ID string to UUID
+			userID, err := uuid.Parse(token.UserID)
+			if err == nil {
+				// Store user info in context
+				c.Set("userID", userID)
+				c.Set("username", token.Username)
+				c.Set("userRole", token.Role)
+				c.Set("authenticated", true)
+			} else {
+				// Mark as unauthenticated
+				c.Set("authenticated", false)
+			}
 		} else {
 			// Mark as unauthenticated
 			c.Set("authenticated", false)
