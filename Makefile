@@ -1,93 +1,76 @@
-.PHONY: build clean test test-unit test-integration lint docker
+.PHONY: build clean test lint vet fmt help run docker-build docker-run setup test-unit test-integration test-api test-all
 
 # Build settings
 BINARY_NAME=trytrago
-BUILD_DIR=build
-VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-COMMIT_SHA=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-BUILD_TIME=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS=-ldflags "-X github.com/valpere/trytrago/domain.Version=$(VERSION) -X github.com/valpere/trytrago/domain.CommitSHA=$(COMMIT_SHA) -X github.com/valpere/trytrago/domain.BuildTime=$(BUILD_TIME)"
+VERSION?=$(shell git describe --tags --always --dirty)
+BUILD_DIR=./build
+LDFLAGS=-ldflags "-X github.com/valpere/trytrago/domain.Version=$(VERSION)"
+
+# Docker settings
+DOCKER_IMAGE=trytrago
+DOCKER_TAG=latest
 
 # Default target
-all: clean build
+.DEFAULT_GOAL := help
+
+# Set up dev environment
+setup: ## Install development dependencies
+	go mod download
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
 # Build the application
-build:
-	@echo "Building $(BINARY_NAME)..."
-	@mkdir -p $(BUILD_DIR)
-	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) main.go
+build: ## Build the binary
+	mkdir -p $(BUILD_DIR)
+	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./main.go
 
 # Clean build artifacts
-clean:
-	@echo "Cleaning..."
-	@rm -rf $(BUILD_DIR)
+clean: ## Remove build artifacts
+	rm -rf $(BUILD_DIR)
 
 # Run the application
-run: build
-	@./$(BUILD_DIR)/$(BINARY_NAME)
+run: ## Run the application
+	go run $(LDFLAGS) ./main.go server
 
 # Run unit tests
-test-unit:
-	@echo "Running unit tests..."
-	go test -v ./test/unit/...
+test-unit: ## Run unit tests
+	go test -v -race ./test/unit/...
 
-# Run integration tests (requires database connections)
-test-integration:
-	@echo "Running integration tests..."
+# Run integration tests
+test-integration: ## Run integration tests
 	INTEGRATION_TEST=true go test -v ./test/integration/...
 
-# Run all tests
-test: test-unit test-integration
+# Run API tests
+test-api: ## Run API endpoint and auth flow tests
+	go test -v ./test/api/...
+# 	go test -v ./test/auth/...
 
-# Run linting checks
-lint:
-	@echo "Running linter..."
+# Run all tests
+test-all: test-unit test-integration test-api ## Run all tests
+
+# Default test command runs unit tests
+test: test-unit ## Run unit tests (default)
+
+# Code quality tools
+lint: ## Run linter
 	golangci-lint run ./...
 
-# Generate test coverage report
-test-coverage:
-	@echo "Generating test coverage report..."
-	@mkdir -p $(BUILD_DIR)
-	go test -coverprofile=$(BUILD_DIR)/coverage.out ./...
-	go tool cover -html=$(BUILD_DIR)/coverage.out -o $(BUILD_DIR)/coverage.html
-	@echo "Coverage report generated at $(BUILD_DIR)/coverage.html"
+vet: ## Run go vet
+	go vet ./...
 
-# Build Docker image
-docker:
-	@echo "Building Docker image..."
-	docker build -t valpere/$(BINARY_NAME):$(VERSION) .
+fmt: ## Run gofmt
+	go fmt ./...
 
-# Run in Docker
-docker-run: docker
-	@echo "Running in Docker..."
-	docker run --rm -p 8080:8080 valpere/$(BINARY_NAME):$(VERSION)
+# Docker commands
+docker-build: ## Build Docker image
+	docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
 
-# Create a new database migration file
-migration-create:
-	@echo "Creating migration..."
-	@read -p "Enter migration name: " name; \
-	version=$$(date +%Y%m%d%H%M%S); \
-	echo "Creating migration V$${version}__$${name}.sql"; \
-	touch migrations/V$${version}__$${name}.sql; \
-	touch migrations/R$${version}__rollback_$${name}.sql
+docker-run: ## Run Docker container
+	docker run -p 8080:8080 $(DOCKER_IMAGE):$(DOCKER_TAG)
 
-# Run database migrations
-migrate:
-	@echo "Running database migrations..."
-	@./$(BUILD_DIR)/$(BINARY_NAME) migrate --apply
+# Generate documentation
+docs: ## Generate API documentation
+	swag init -g interface/api/rest/router.go
 
-# Show help
-help:
-	@echo "TryTraGo Makefile commands:"
-	@echo "  make build           - Build the application"
-	@echo "  make clean           - Remove build artifacts"
-	@echo "  make run             - Build and run the application"
-	@echo "  make test            - Run all tests"
-	@echo "  make test-unit       - Run unit tests"
-	@echo "  make test-integration - Run integration tests"
-	@echo "  make test-coverage   - Generate test coverage report"
-	@echo "  make lint            - Run linting checks"
-	@echo "  make docker          - Build Docker image"
-	@echo "  make docker-run      - Run application in Docker"
-	@echo "  make migration-create - Create a new migration file"
-	@echo "  make migrate         - Run database migrations"
+# Help command
+help: ## Display this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
