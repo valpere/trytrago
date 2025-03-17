@@ -8,32 +8,39 @@ import (
 	"github.com/valpere/trytrago/application/dto/request"
 	"github.com/valpere/trytrago/application/dto/response"
 	"github.com/valpere/trytrago/application/service"
-	"github.com/valpere/trytrago/domain/database"
+	"github.com/valpere/trytrago/domain/errors"
 	"github.com/valpere/trytrago/domain/logging"
+	restResponse "github.com/valpere/trytrago/interface/api/rest/response"
 )
 
-// EntryHandler implements the EntryHandlerInterface
-type EntryHandler struct {
+// EntryHandlerImpl implements the EntryHandlerInterface with improved error handling
+type EntryHandlerImpl struct {
 	service service.EntryService
 	logger  logging.Logger
 }
 
-// NewEntryHandler creates a new instance of EntryHandler
-func NewEntryHandler(service service.EntryService, logger logging.Logger) *EntryHandler {
-	return &EntryHandler{
+// NewEntryHandlerWithErrorHandling creates a new instance of EntryHandlerImpl with improved error handling
+func NewEntryHandlerWithErrorHandling(service service.EntryService, logger logging.Logger) EntryHandlerInterface {
+	return &EntryHandlerImpl{
 		service: service,
 		logger:  logger.With(logging.String("component", "entry_handler")),
 	}
 }
 
 // ListEntries handles GET /api/v1/entries
-func (h *EntryHandler) ListEntries(c *gin.Context) {
+func (h *EntryHandlerImpl) ListEntries(c *gin.Context) {
 	var req request.ListEntriesRequest
 
 	// Bind query parameters
 	if err := c.ShouldBindQuery(&req); err != nil {
 		h.logger.Warn("invalid list entries request", logging.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request parameters"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrBadRequest,
+			http.StatusBadRequest,
+			"bad_request",
+			"Invalid request parameters",
+			map[string]interface{}{"query_params": err.Error()},
+		), h.logger)
 		return
 	}
 
@@ -46,7 +53,7 @@ func (h *EntryHandler) ListEntries(c *gin.Context) {
 	resp, err := h.service.ListEntries(c.Request.Context(), &req)
 	if err != nil {
 		h.logger.Error("failed to list entries", logging.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve entries"})
+		restResponse.RespondWithError(c, err, h.logger)
 		return
 	}
 
@@ -54,27 +61,31 @@ func (h *EntryHandler) ListEntries(c *gin.Context) {
 }
 
 // GetEntry handles GET /api/v1/entries/:id
-func (h *EntryHandler) GetEntry(c *gin.Context) {
+func (h *EntryHandlerImpl) GetEntry(c *gin.Context) {
 	idParam := c.Param("id")
 
 	// Parse UUID
 	id, err := uuid.Parse(idParam)
 	if err != nil {
 		h.logger.Warn("invalid entry ID format", logging.String("id", idParam))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid entry ID format"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_id_format",
+			"Invalid entry ID format",
+			map[string]interface{}{"id": idParam},
+		), h.logger)
 		return
 	}
 
 	// Call service
 	resp, err := h.service.GetEntryByID(c.Request.Context(), id)
 	if err != nil {
-		if database.IsNotFoundError(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Entry not found"})
-			return
-		}
-
-		h.logger.Error("failed to get entry", logging.Error(err), logging.String("id", idParam))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve entry"})
+		h.logger.Error("failed to get entry",
+			logging.Error(err),
+			logging.String("id", idParam),
+		)
+		restResponse.RespondWithError(c, err, h.logger)
 		return
 	}
 
@@ -82,26 +93,27 @@ func (h *EntryHandler) GetEntry(c *gin.Context) {
 }
 
 // CreateEntry handles POST /api/v1/entries
-func (h *EntryHandler) CreateEntry(c *gin.Context) {
+func (h *EntryHandlerImpl) CreateEntry(c *gin.Context) {
 	var req request.CreateEntryRequest
 
 	// Bind JSON body
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Warn("invalid create entry request", logging.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_request",
+			"Invalid request format",
+			map[string]interface{}{"validation": err.Error()},
+		), h.logger)
 		return
 	}
 
 	// Call service
 	resp, err := h.service.CreateEntry(c.Request.Context(), &req)
 	if err != nil {
-		if database.IsDuplicateError(err) {
-			c.JSON(http.StatusConflict, gin.H{"error": "Entry already exists"})
-			return
-		}
-
 		h.logger.Error("failed to create entry", logging.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create entry"})
+		restResponse.RespondWithError(c, err, h.logger)
 		return
 	}
 
@@ -109,14 +121,20 @@ func (h *EntryHandler) CreateEntry(c *gin.Context) {
 }
 
 // UpdateEntry handles PUT /api/v1/entries/:id
-func (h *EntryHandler) UpdateEntry(c *gin.Context) {
+func (h *EntryHandlerImpl) UpdateEntry(c *gin.Context) {
 	idParam := c.Param("id")
 
 	// Parse UUID
 	id, err := uuid.Parse(idParam)
 	if err != nil {
 		h.logger.Warn("invalid entry ID format", logging.String("id", idParam))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid entry ID format"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_id_format",
+			"Invalid entry ID format",
+			map[string]interface{}{"id": idParam},
+		), h.logger)
 		return
 	}
 
@@ -125,20 +143,24 @@ func (h *EntryHandler) UpdateEntry(c *gin.Context) {
 	// Bind JSON body
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Warn("invalid update entry request", logging.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_request",
+			"Invalid request format",
+			map[string]interface{}{"validation": err.Error()},
+		), h.logger)
 		return
 	}
 
 	// Call service
 	resp, err := h.service.UpdateEntry(c.Request.Context(), id, &req)
 	if err != nil {
-		if database.IsNotFoundError(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Entry not found"})
-			return
-		}
-
-		h.logger.Error("failed to update entry", logging.Error(err), logging.String("id", idParam))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update entry"})
+		h.logger.Error("failed to update entry",
+			logging.Error(err),
+			logging.String("id", idParam),
+		)
+		restResponse.RespondWithError(c, err, h.logger)
 		return
 	}
 
@@ -146,27 +168,31 @@ func (h *EntryHandler) UpdateEntry(c *gin.Context) {
 }
 
 // DeleteEntry handles DELETE /api/v1/entries/:id
-func (h *EntryHandler) DeleteEntry(c *gin.Context) {
+func (h *EntryHandlerImpl) DeleteEntry(c *gin.Context) {
 	idParam := c.Param("id")
 
 	// Parse UUID
 	id, err := uuid.Parse(idParam)
 	if err != nil {
 		h.logger.Warn("invalid entry ID format", logging.String("id", idParam))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid entry ID format"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_id_format",
+			"Invalid entry ID format",
+			map[string]interface{}{"id": idParam},
+		), h.logger)
 		return
 	}
 
 	// Call service
 	err = h.service.DeleteEntry(c.Request.Context(), id)
 	if err != nil {
-		if database.IsNotFoundError(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Entry not found"})
-			return
-		}
-
-		h.logger.Error("failed to delete entry", logging.Error(err), logging.String("id", idParam))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete entry"})
+		h.logger.Error("failed to delete entry",
+			logging.Error(err),
+			logging.String("id", idParam),
+		)
+		restResponse.RespondWithError(c, err, h.logger)
 		return
 	}
 
@@ -174,27 +200,31 @@ func (h *EntryHandler) DeleteEntry(c *gin.Context) {
 }
 
 // ListMeanings handles GET /api/v1/entries/:id/meanings
-func (h *EntryHandler) ListMeanings(c *gin.Context) {
+func (h *EntryHandlerImpl) ListMeanings(c *gin.Context) {
 	idParam := c.Param("id")
 
 	// Parse UUID
 	id, err := uuid.Parse(idParam)
 	if err != nil {
 		h.logger.Warn("invalid entry ID format", logging.String("id", idParam))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid entry ID format"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_id_format",
+			"Invalid entry ID format",
+			map[string]interface{}{"id": idParam},
+		), h.logger)
 		return
 	}
 
 	// Call service
 	resp, err := h.service.ListMeanings(c.Request.Context(), id)
 	if err != nil {
-		if database.IsNotFoundError(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Entry not found"})
-			return
-		}
-
-		h.logger.Error("failed to list meanings", logging.Error(err), logging.String("entryId", idParam))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve meanings"})
+		h.logger.Error("failed to list meanings",
+			logging.Error(err),
+			logging.String("entryId", idParam),
+		)
+		restResponse.RespondWithError(c, err, h.logger)
 		return
 	}
 
@@ -202,42 +232,45 @@ func (h *EntryHandler) ListMeanings(c *gin.Context) {
 }
 
 // GetMeaning retrieves a specific meaning
-func (h *EntryHandler) GetMeaning(c *gin.Context) {
-	meaningIDParam := c.Param("meaningId")
-
-	// Parse UUID
-	meaningID, err := uuid.Parse(meaningIDParam)
-	if err != nil {
-		h.logger.Warn("invalid meaning ID format", logging.String("id", meaningIDParam))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid meaning ID format"})
-		return
-	}
-
-	// This endpoint is not directly implemented in the service interface
-	// We need to find the meaning in the context of its entry
-
-	// Get the entry ID from the path
+func (h *EntryHandlerImpl) GetMeaning(c *gin.Context) {
+	// Parse entry ID
 	entryIDParam := c.Param("entryId")
 	entryID, err := uuid.Parse(entryIDParam)
 	if err != nil {
 		h.logger.Warn("invalid entry ID format", logging.String("id", entryIDParam))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid entry ID format"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_id_format",
+			"Invalid entry ID format",
+			map[string]interface{}{"id": entryIDParam},
+		), h.logger)
+		return
+	}
+
+	// Parse meaning ID
+	meaningIDParam := c.Param("meaningId")
+	meaningID, err := uuid.Parse(meaningIDParam)
+	if err != nil {
+		h.logger.Warn("invalid meaning ID format", logging.String("id", meaningIDParam))
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_id_format",
+			"Invalid meaning ID format",
+			map[string]interface{}{"id": meaningIDParam},
+		), h.logger)
 		return
 	}
 
 	// Get the entry with its meanings
 	entryResp, err := h.service.GetEntryByID(c.Request.Context(), entryID)
 	if err != nil {
-		if database.IsNotFoundError(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Entry not found"})
-			return
-		}
-
 		h.logger.Error("failed to get entry",
 			logging.Error(err),
 			logging.String("entryId", entryIDParam),
 		)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve entry"})
+		restResponse.RespondWithError(c, err, h.logger)
 		return
 	}
 
@@ -251,7 +284,7 @@ func (h *EntryHandler) GetMeaning(c *gin.Context) {
 	}
 
 	if meaningResp == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Meaning not found"})
+		restResponse.RespondWithError(c, errors.ErrMeaningNotFound, h.logger)
 		return
 	}
 
@@ -259,14 +292,20 @@ func (h *EntryHandler) GetMeaning(c *gin.Context) {
 }
 
 // AddMeaning adds a new meaning to an entry
-func (h *EntryHandler) AddMeaning(c *gin.Context) {
+func (h *EntryHandlerImpl) AddMeaning(c *gin.Context) {
 	entryIDParam := c.Param("entryId")
 
 	// Parse UUID
 	entryID, err := uuid.Parse(entryIDParam)
 	if err != nil {
 		h.logger.Warn("invalid entry ID format", logging.String("id", entryIDParam))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid entry ID format"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_id_format",
+			"Invalid entry ID format",
+			map[string]interface{}{"id": entryIDParam},
+		), h.logger)
 		return
 	}
 
@@ -275,23 +314,24 @@ func (h *EntryHandler) AddMeaning(c *gin.Context) {
 	// Bind JSON body
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Warn("invalid create meaning request", logging.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_request",
+			"Invalid request format",
+			map[string]interface{}{"validation": err.Error()},
+		), h.logger)
 		return
 	}
 
 	// Call service
 	resp, err := h.service.AddMeaning(c.Request.Context(), entryID, &req)
 	if err != nil {
-		if database.IsNotFoundError(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Entry not found"})
-			return
-		}
-
 		h.logger.Error("failed to add meaning",
 			logging.Error(err),
 			logging.String("entryId", entryIDParam),
 		)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add meaning"})
+		restResponse.RespondWithError(c, err, h.logger)
 		return
 	}
 
@@ -299,14 +339,20 @@ func (h *EntryHandler) AddMeaning(c *gin.Context) {
 }
 
 // UpdateMeaning updates an existing meaning
-func (h *EntryHandler) UpdateMeaning(c *gin.Context) {
+func (h *EntryHandlerImpl) UpdateMeaning(c *gin.Context) {
 	meaningIDParam := c.Param("meaningId")
 
 	// Parse UUID
 	meaningID, err := uuid.Parse(meaningIDParam)
 	if err != nil {
 		h.logger.Warn("invalid meaning ID format", logging.String("id", meaningIDParam))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid meaning ID format"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_id_format",
+			"Invalid meaning ID format",
+			map[string]interface{}{"id": meaningIDParam},
+		), h.logger)
 		return
 	}
 
@@ -315,54 +361,56 @@ func (h *EntryHandler) UpdateMeaning(c *gin.Context) {
 	// Bind JSON body
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Warn("invalid update meaning request", logging.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_request",
+			"Invalid request format",
+			map[string]interface{}{"validation": err.Error()},
+		), h.logger)
 		return
 	}
 
 	// Call service
 	resp, err := h.service.UpdateMeaning(c.Request.Context(), meaningID, &req)
 	if err != nil {
-		if database.IsNotFoundError(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Meaning not found"})
-			return
-		}
-
 		h.logger.Error("failed to update meaning",
 			logging.Error(err),
 			logging.String("meaningId", meaningIDParam),
 		)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update meaning"})
+		restResponse.RespondWithError(c, err, h.logger)
 		return
 	}
 
 	c.JSON(http.StatusOK, resp)
 }
 
-// DeleteMeaning deletes a meaning
-func (h *EntryHandler) DeleteMeaning(c *gin.Context) {
+// DeleteMeaning handles deleting a meaning
+func (h *EntryHandlerImpl) DeleteMeaning(c *gin.Context) {
 	meaningIDParam := c.Param("meaningId")
 
 	// Parse UUID
 	meaningID, err := uuid.Parse(meaningIDParam)
 	if err != nil {
 		h.logger.Warn("invalid meaning ID format", logging.String("id", meaningIDParam))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid meaning ID format"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_id_format",
+			"Invalid meaning ID format",
+			map[string]interface{}{"id": meaningIDParam},
+		), h.logger)
 		return
 	}
 
 	// Call service
 	err = h.service.DeleteMeaning(c.Request.Context(), meaningID)
 	if err != nil {
-		if database.IsNotFoundError(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Meaning not found"})
-			return
-		}
-
 		h.logger.Error("failed to delete meaning",
 			logging.Error(err),
 			logging.String("meaningId", meaningIDParam),
 		)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete meaning"})
+		restResponse.RespondWithError(c, err, h.logger)
 		return
 	}
 
@@ -370,14 +418,20 @@ func (h *EntryHandler) DeleteMeaning(c *gin.Context) {
 }
 
 // AddMeaningComment adds a comment to a meaning
-func (h *EntryHandler) AddMeaningComment(c *gin.Context) {
+func (h *EntryHandlerImpl) AddMeaningComment(c *gin.Context) {
 	meaningIDParam := c.Param("meaningId")
 
 	// Parse UUID
 	meaningID, err := uuid.Parse(meaningIDParam)
 	if err != nil {
 		h.logger.Warn("invalid meaning ID format", logging.String("id", meaningIDParam))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid meaning ID format"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_id_format",
+			"Invalid meaning ID format",
+			map[string]interface{}{"id": meaningIDParam},
+		), h.logger)
 		return
 	}
 
@@ -386,7 +440,13 @@ func (h *EntryHandler) AddMeaningComment(c *gin.Context) {
 	// Bind JSON body
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Warn("invalid create comment request", logging.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_request",
+			"Invalid request format",
+			map[string]interface{}{"validation": err.Error()},
+		), h.logger)
 		return
 	}
 
@@ -394,26 +454,26 @@ func (h *EntryHandler) AddMeaningComment(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		h.logger.Error("user ID not found in context")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Authentication error"})
+		restResponse.RespondWithError(c, errors.New(
+			errors.ErrUnauthorized,
+			http.StatusUnauthorized,
+			"unauthorized",
+			"Authentication required",
+		), h.logger)
 		return
 	}
 
-	// Add user ID to request from the authenticated user
+	// Add user ID to request
 	req.UserID = userID.(uuid.UUID)
 
 	// Call service
 	resp, err := h.service.AddMeaningComment(c.Request.Context(), meaningID, &req)
 	if err != nil {
-		if database.IsNotFoundError(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Meaning not found"})
-			return
-		}
-
 		h.logger.Error("failed to add comment to meaning",
 			logging.Error(err),
 			logging.String("meaningId", meaningIDParam),
 		)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add comment"})
+		restResponse.RespondWithError(c, err, h.logger)
 		return
 	}
 
@@ -421,14 +481,20 @@ func (h *EntryHandler) AddMeaningComment(c *gin.Context) {
 }
 
 // ToggleMeaningLike toggles a like on a meaning
-func (h *EntryHandler) ToggleMeaningLike(c *gin.Context) {
+func (h *EntryHandlerImpl) ToggleMeaningLike(c *gin.Context) {
 	meaningIDParam := c.Param("meaningId")
 
 	// Parse UUID
 	meaningID, err := uuid.Parse(meaningIDParam)
 	if err != nil {
 		h.logger.Warn("invalid meaning ID format", logging.String("id", meaningIDParam))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid meaning ID format"})
+		restResponse.RespondWithError(c, errors.NewWithDetails(
+			errors.ErrInvalidInput,
+			http.StatusBadRequest,
+			"invalid_id_format",
+			"Invalid meaning ID format",
+			map[string]interface{}{"id": meaningIDParam},
+		), h.logger)
 		return
 	}
 
@@ -436,23 +502,23 @@ func (h *EntryHandler) ToggleMeaningLike(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		h.logger.Error("user ID not found in context")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Authentication error"})
+		restResponse.RespondWithError(c, errors.New(
+			errors.ErrUnauthorized,
+			http.StatusUnauthorized,
+			"unauthorized",
+			"Authentication required",
+		), h.logger)
 		return
 	}
 
 	// Call service
 	err = h.service.ToggleMeaningLike(c.Request.Context(), meaningID, userID.(uuid.UUID))
 	if err != nil {
-		if database.IsNotFoundError(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Meaning not found"})
-			return
-		}
-
 		h.logger.Error("failed to toggle like on meaning",
 			logging.Error(err),
 			logging.String("meaningId", meaningIDParam),
 		)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to toggle like"})
+		restResponse.RespondWithError(c, err, h.logger)
 		return
 	}
 
