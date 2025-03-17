@@ -1,82 +1,60 @@
-.PHONY: build clean test lint vet fmt help run docker-build docker-run setup test-unit test-integration test-api test-all
+# Makefile
 
-# Build settings
-BINARY_NAME=trytrago
-VERSION?=$(shell git describe --tags --always --dirty)
-BUILD_DIR=./build
-LDFLAGS=-ldflags "-X github.com/valpere/trytrago/domain.Version=$(VERSION)"
-
-# Docker settings
-DOCKER_IMAGE=trytrago
-DOCKER_TAG=latest
+.PHONY: all build clean test test-unit test-integration swagger-setup run help
 
 # Default target
-.DEFAULT_GOAL := help
-
-# Set up dev environment
-setup: ## Install development dependencies
-	go mod download
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+all: help
 
 # Build the application
-build: ## Build the binary
-	mkdir -p $(BUILD_DIR)
-	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./main.go
+build:
+	@echo "Building TryTraGo..."
+	@go build -o bin/trytrago main.go
 
 # Clean build artifacts
-clean: ## Remove build artifacts
-	rm -rf $(BUILD_DIR)
-
-# Run the application
-run: ## Run the application
-	go run $(LDFLAGS) ./main.go server
+clean:
+	@echo "Cleaning up..."
+	@rm -rf bin/
+	@rm -f coverage.out
 
 # Run unit tests
-test-unit: ## Run unit tests
-	go test -v -race ./test/unit/...
+test-unit:
+	@echo "Running unit tests..."
+	@go test -v ./test/unit/...
 
 # Run integration tests
-test-integration: ## Run integration tests
-	INTEGRATION_TEST=true go test -v ./test/integration/...
-
-# Run API tests
-test-api: ## Run API endpoint and auth flow tests
-	go test -v ./test/api/...
-
-# Authentication flow tests
-.PHONY: test-auth
-test-auth:
-	@echo "Running authentication flow tests..."
-	@go test -v ./test/auth/...
+test-integration:
+	@echo "Running integration tests..."
+	@INTEGRATION_TEST=true go test -v ./test/integration/...
 
 # Run all tests
-test-all: test-unit test-integration test-api  test-auth ## Run all tests
-	@echo "All tests passed!"
+test: test-unit test-integration
 
-# Default test command runs unit tests
-test: test-unit ## Run unit tests (default)
+# Set up Swagger UI
+swagger-setup:
+	@echo "Setting up Swagger UI..."
+	@chmod +x scripts/swagger-setup.sh
+	@scripts/swagger-setup.sh
 
-# Code quality tools
-lint: ## Run linter
-	golangci-lint run ./...
+# Run the application
+run: build
+	@echo "Starting TryTraGo..."
+	@./bin/trytrago server
 
-vet: ## Run go vet
-	go vet ./...
+# Generate OpenAPI specification
+openapi-generate:
+	@echo "Generating OpenAPI specification..."
+	@mkdir -p docs
+	@cp interface/api/rest/docs/openapi.yaml docs/OpenAPISpecification.yaml
 
-fmt: ## Run gofmt
-	go fmt ./...
-
-# Docker commands
-docker-build: ## Build Docker image
-	docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
-
-docker-run: ## Run Docker container
-	docker run -p 8080:8080 $(DOCKER_IMAGE):$(DOCKER_TAG)
-
-# Generate documentation
-docs: ## Generate API documentation
-	swag init -g interface/api/rest/router.go
-
-# Help command
-help: ## Display this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+# Help
+help:
+	@echo "Available commands:"
+	@echo "  make build              - Build the application"
+	@echo "  make clean              - Clean build artifacts"
+	@echo "  make test-unit          - Run unit tests"
+	@echo "  make test-integration   - Run integration tests"
+	@echo "  make test               - Run all tests"
+	@echo "  make swagger-setup      - Set up Swagger UI"
+	@echo "  make run                - Run the application"
+	@echo "  make openapi-generate   - Generate OpenAPI specification"
+	@echo "  make help               - Show this help message"
