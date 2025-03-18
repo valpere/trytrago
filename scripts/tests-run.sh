@@ -16,17 +16,23 @@ if [ -f "$PROJECT_ROOT/.env.test.pg" ]; then
   export $(grep -v '^#' "$PROJECT_ROOT/.env.test.pg" | xargs)
 fi
 
-echo "Running unit tests..."
-go test -v -race ./test/unit/...
+pushd "$PROJECT_ROOT"
 
-echo "Running integration tests..."
-go test -v ./test/integration/...
+# echo "Running unit tests..."
+# go test -v -race ./test/unit/...
 
-echo "Running API tests..."
-go test -v ./test/api/...
+# echo "Running integration tests..."
+# go test -v ./test/integration/...
 
-echo "Running auth flow tests..."
-go test -v ./test/auth/...
+# echo "Running API tests..."
+# go test -v ./test/api/...
+
+# echo "Running auth flow tests..."
+# go test -v ./test/auth/...
+
+make test-all
+
+popd
 
 # Clean up test environment
 "${SCRIPT_DIR}/test_pg-stop.sh"

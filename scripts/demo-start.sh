@@ -15,12 +15,12 @@ echo "Starting TryTraGo demo environment..."
 
 # Start the entire stack with Docker Compose
 echo "Starting services..."
-docker-compose -f "$PROJECT_ROOT/docker/docker-compose-demo.yml" up -d
+docker compose -f "$PROJECT_ROOT/docker/docker-compose-demo.yml" up -d
 
 # Check if the app is healthy
 echo "Waiting for TryTraGo to be ready..."
 timeout=120
-while ! docker-compose -f "$PROJECT_ROOT/docker/docker-compose-demo.yml" exec -T trytrago wget --no-verbose --tries=1 --spider http://localhost:8080/health >/dev/null 2>&1; do
+while ! docker compose -f "$PROJECT_ROOT/docker/docker-compose-demo.yml" exec -T trytrago wget --no-verbose --tries=1 --spider http://localhost:8080/health >/dev/null 2>&1; do
   timeout=$((timeout - 1))
   if [ $timeout -eq 0 ]; then
     echo "Timed out waiting for TryTraGo to be ready."

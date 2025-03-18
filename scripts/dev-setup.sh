@@ -21,7 +21,7 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 # # Check if Docker Compose is installed
-# if ! command -v docker-compose >/dev/null 2>&1; then
+# if ! command -v docker compose >/dev/null 2>&1; then
   # echo "Error: Docker Compose is not installed. Please install Docker Compose."
   # exit 1
 # fi
