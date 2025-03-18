@@ -7,8 +7,8 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        VERSION: dev
-        COMMIT_SHA: local
+        VERSION: demo
+        COMMIT_SHA: ${COMMIT_SHA:-local}
         BUILD_TIME: ${BUILD_TIME:-2023-01-01T00:00:00Z}
     ports:
       - "8080:8080"
@@ -23,12 +23,14 @@ services:
       - TRYTRAGO_DATABASE_PASSWORD=postgres
       - TRYTRAGO_DATABASE_NAME=trytrago
       - TRYTRAGO_CACHE_ADDRESS=redis:6379
-      - TRYTRAGO_ENVIRONMENT=development
-      - TRYTRAGO_LOGGING_LEVEL=debug
-      - TRYTRAGO_LOGGING_FORMAT=console
+      - TRYTRAGO_ENVIRONMENT=production
+      - TRYTRAGO_LOGGING_LEVEL=info
+      - TRYTRAGO_LOGGING_FORMAT=json
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - trytrago-network
     restart: unless-stopped
@@ -76,7 +78,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # Adminer for database management (optional, development only)
+  # Adminer for database management
   adminer:
     image: adminer
     ports:
@@ -88,13 +90,14 @@ services:
     networks:
       - trytrago-network
     restart: unless-stopped
-    profiles:
-      - dev
 
 volumes:
   postgres-data:
+    name: trytrago-postgres-data
   redis-data:
+    name: trytrago-redis-data
   trytrago-data:
+    name: trytrago-app-data
 
 networks:
   trytrago-network:

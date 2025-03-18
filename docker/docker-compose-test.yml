@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  # PostgreSQL Database for testing
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"  # Different port to avoid conflicts with dev environment
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=trytrago_test
+    networks:
+      - trytrago-test-network
+    tmpfs:
+      - /var/lib/postgresql/data  # Use tmpfs for faster tests
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 5
+
+  # Redis for testing
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"  # Different port to avoid conflicts with dev environment
+    networks:
+      - trytrago-test-network
+    tmpfs:
+      - /data  # Use tmpfs for faster tests
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 5
+
+networks:
+  trytrago-test-network:
+    driver: bridge

@@ -4,11 +4,11 @@ services:
     image: mysql:8.0
     ports:
       - "3306:3306"
-    # volumes:
-    #   - mysql-data:/var/lib/mysql
+    volumes:
+      - mysql-data:/var/lib/mysql/data
     environment:
       - MYSQL_ROOT_PASSWORD=root
-      - MYSQL_DATABASE=trytrago_test
+      - MYSQL_DATABASE=trytrago_dev
       - MYSQL_USER=mysqluser
       - MYSQL_PASSWORD=mysqlpassword
     networks:
@@ -25,8 +25,8 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
-    # volumes:
-    #   - redis-data:/data
+    volumes:
+      - redis-data:/data
     command: redis-server --appendonly yes
     networks:
       - trytrago-network
@@ -49,13 +49,13 @@ services:
     networks:
       - trytrago-network
     restart: unless-stopped
-    # profiles:
-    #   - dev
-
-# volumes:
-#   mysql-data:
-#   redis-data:
+    profiles:
+      - debug
 
 networks:
   trytrago-network:
     driver: bridge
+
+volumes:
+  mysql-data:
+  redis-data:
