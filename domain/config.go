@@ -1,3 +1,5 @@
+// domain/config.go
+
 package domain
 
 import (
@@ -52,11 +54,19 @@ type Config struct {
 
 	// Cache configuration
 	Cache struct {
-		Type     string        `mapstructure:"type" yaml:"type"`
-		Address  string        `mapstructure:"address" yaml:"address"`
-		Password string        `mapstructure:"password" yaml:"password"`
-		DB       int           `mapstructure:"db" yaml:"db"`
-		TTL      time.Duration `mapstructure:"ttl" yaml:"ttl"`
+		Enabled       bool          `mapstructure:"enabled" yaml:"enabled"`
+		Type          string        `mapstructure:"type" yaml:"type"`
+		Host          string        `mapstructure:"host" yaml:"host"`
+		Port          int           `mapstructure:"port" yaml:"port"`
+		Address       string        `mapstructure:"address" yaml:"address"` // Combined host:port
+		Password      string        `mapstructure:"password" yaml:"password"`
+		DB            int           `mapstructure:"db" yaml:"db"`
+		TTL           time.Duration `mapstructure:"ttl" yaml:"ttl"`
+		KeyPrefix     string        `mapstructure:"key_prefix" yaml:"key_prefix"`
+		EntryTTL      time.Duration `mapstructure:"entry_ttl" yaml:"entry_ttl"`
+		ListTTL       time.Duration `mapstructure:"list_ttl" yaml:"list_ttl"`
+		SocialTTL     time.Duration `mapstructure:"social_ttl" yaml:"social_ttl"`
+		TranslationTTL time.Duration `mapstructure:"translation_ttl" yaml:"translation_ttl"`
 	} `mapstructure:"cache" yaml:"cache"`
 
 	// Environment and version information
@@ -95,6 +105,30 @@ func (c *Config) Validate() error {
 	if c.Auth.RefreshTokenDuration <= 0 {
 		return fmt.Errorf("refresh token duration must be positive")
 	}
+	
+	// If cache is enabled but address not specified, construct it from host and port
+	if c.Cache.Enabled && c.Cache.Address == "" && c.Cache.Host != "" {
+		c.Cache.Address = fmt.Sprintf("%s:%d", c.Cache.Host, c.Cache.Port)
+	}
+	
+	// Set default cache TTLs if not specified
+	if c.Cache.Enabled {
+		if c.Cache.TTL <= 0 {
+			c.Cache.TTL = 10 * time.Minute
+		}
+		if c.Cache.EntryTTL <= 0 {
+			c.Cache.EntryTTL = 15 * time.Minute
+		}
+		if c.Cache.ListTTL <= 0 {
+			c.Cache.ListTTL = 5 * time.Minute
+		}
+		if c.Cache.SocialTTL <= 0 {
+			c.Cache.SocialTTL = 2 * time.Minute
+		}
+		if c.Cache.TranslationTTL <= 0 {
+			c.Cache.TranslationTTL = 15 * time.Minute
+		}
+	}
 
 	return nil
 }
@@ -126,4 +160,12 @@ func (c *Config) GetDSN() string {
 	default:
 		return ""
 	}
+}
+
+// GetCachePrefix returns the appropriate prefix for cache keys
+func (c *Config) GetCachePrefix() string {
+	if c.Cache.KeyPrefix != "" {
+		return c.Cache.KeyPrefix
+	}
+	return fmt.Sprintf("trytrago:%s", c.Environment)
 }

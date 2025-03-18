@@ -61,9 +61,15 @@ auth:
 
 # Cache configuration
 cache:
+  # Enable caching
+  enabled: true
   # Cache type: redis, memory
   type: redis
-  # Redis address
+  # Redis host
+  host: localhost
+  # Redis port
+  port: 6379
+  # Address (optional, combined host:port)
   address: localhost:6379
   # Redis password
   password: ""
@@ -71,6 +77,13 @@ cache:
   db: 0
   # Default TTL
   ttl: 10m
+  # Cache TTLs for specific data types
+  entry_ttl: 15m
+  list_ttl: 5m
+  social_ttl: 2m
+  translation_ttl: 15m
+  # Key prefix (optional, defaults to "trytrago:<environment>")
+  key_prefix: ""
 
 # Environment: development, production
 environment: development

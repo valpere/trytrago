@@ -17,6 +17,7 @@ type Cache interface {
 	Delete(ctx context.Context, key string) error
 	Exists(ctx context.Context, key string) (bool, error)
 	Invalidate(ctx context.Context, pattern string) error
+	Close() error
 }
 
 // RedisCache implements the Cache interface using Redis
@@ -45,7 +46,7 @@ func NewRedisCache(cfg RedisConfig, logger logging.Logger) (Cache, error) {
 	// Test connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	if err := client.Ping(ctx).Err(); err != nil {
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
@@ -64,7 +65,7 @@ func (c *RedisCache) Get(ctx context.Context, key string, dest interface{}) erro
 			c.logger.Debug("cache miss", logging.String("key", key))
 			return fmt.Errorf("key not found")
 		}
-		c.logger.Error("error getting from cache", 
+		c.logger.Error("error getting from cache",
 			logging.String("key", key),
 			logging.Error(err),
 		)
@@ -73,7 +74,7 @@ func (c *RedisCache) Get(ctx context.Context, key string, dest interface{}) erro
 
 	// Unmarshal the JSON value
 	if err := json.Unmarshal([]byte(val), dest); err != nil {
-		c.logger.Error("error unmarshaling cached value", 
+		c.logger.Error("error unmarshaling cached value",
 			logging.String("key", key),
 			logging.Error(err),
 		)
@@ -89,7 +90,7 @@ func (c *RedisCache) Set(ctx context.Context, key string, value interface{}, exp
 	// Marshal the value to JSON
 	data, err := json.Marshal(value)
 	if err != nil {
-		c.logger.Error("error marshaling value for cache", 
+		c.logger.Error("error marshaling value for cache",
 			logging.String("key", key),
 			logging.Error(err),
 		)
@@ -98,14 +99,14 @@ func (c *RedisCache) Set(ctx context.Context, key string, value interface{}, exp
 
 	// Store in Redis
 	if err := c.client.Set(ctx, key, data, expiration).Err(); err != nil {
-		c.logger.Error("error setting cache", 
+		c.logger.Error("error setting cache",
 			logging.String("key", key),
 			logging.Error(err),
 		)
 		return fmt.Errorf("failed to set cache: %w", err)
 	}
 
-	c.logger.Debug("cache set", 
+	c.logger.Debug("cache set",
 		logging.String("key", key),
 		logging.Duration("expiration", expiration),
 	)
@@ -115,7 +116,7 @@ func (c *RedisCache) Set(ctx context.Context, key string, value interface{}, exp
 // Delete removes a value from the cache
 func (c *RedisCache) Delete(ctx context.Context, key string) error {
 	if err := c.client.Del(ctx, key).Err(); err != nil {
-		c.logger.Error("error deleting from cache", 
+		c.logger.Error("error deleting from cache",
 			logging.String("key", key),
 			logging.Error(err),
 		)
@@ -130,7 +131,7 @@ func (c *RedisCache) Delete(ctx context.Context, key string) error {
 func (c *RedisCache) Exists(ctx context.Context, key string) (bool, error) {
 	exists, err := c.client.Exists(ctx, key).Result()
 	if err != nil {
-		c.logger.Error("error checking cache existence", 
+		c.logger.Error("error checking cache existence",
 			logging.String("key", key),
 			logging.Error(err),
 		)
@@ -145,7 +146,7 @@ func (c *RedisCache) Invalidate(ctx context.Context, pattern string) error {
 	// Find all keys matching the pattern
 	keys, err := c.client.Keys(ctx, pattern).Result()
 	if err != nil {
-		c.logger.Error("error finding keys for invalidation", 
+		c.logger.Error("error finding keys for invalidation",
 			logging.String("pattern", pattern),
 			logging.Error(err),
 		)
@@ -159,14 +160,14 @@ func (c *RedisCache) Invalidate(ctx context.Context, pattern string) error {
 
 	// Delete all matching keys
 	if err := c.client.Del(ctx, keys...).Err(); err != nil {
-		c.logger.Error("error invalidating cache", 
+		c.logger.Error("error invalidating cache",
 			logging.String("pattern", pattern),
 			logging.Error(err),
 		)
 		return fmt.Errorf("failed to invalidate cache: %w", err)
 	}
 
-	c.logger.Debug("cache invalidated", 
+	c.logger.Debug("cache invalidated",
 		logging.String("pattern", pattern),
 		logging.Int("keys_removed", len(keys)),
 	)

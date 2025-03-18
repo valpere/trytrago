@@ -43,7 +43,7 @@ run: build ## Run the application
 # Run unit tests
 test-unit: ## Run unit tests
 	@echo "Running unit tests..."
-	go test -v -race ./test/unit/...
+	@go test -v -race ./test/unit/...
 
 # Run integration tests
 test-integration: ## Run integration tests
