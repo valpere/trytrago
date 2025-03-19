@@ -10,6 +10,8 @@ import (
 	"github.com/valpere/trytrago/application/service"
 	"github.com/valpere/trytrago/domain/database"
 	"github.com/valpere/trytrago/domain/logging"
+	"github.com/valpere/trytrago/domain/utils"
+	"github.com/valpere/trytrago/interface/api/rest/middleware"
 )
 
 // EntryHandler implements the EntryHandlerInterface
@@ -37,25 +39,25 @@ func (h *EntryHandler) ListEntries(c *gin.Context) {
 		return
 	}
 
-	// Set default values if not provided
-	if req.Limit == 0 {
-		req.Limit = 20
+	// Sanitize input parameters - strip HTML tags properly
+	if req.WordFilter != "" {
+		req.WordFilter = utils.SanitizeString(req.WordFilter)
 	}
 
-	// Call service
-	resp, err := h.service.ListEntries(c.Request.Context(), &req)
-	if err != nil {
-		h.logger.Error("failed to list entries", logging.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve entries"})
-		return
-	}
-
-	c.JSON(http.StatusOK, resp)
+	// Rest of the implementation...
 }
 
 // GetEntry handles GET /api/v1/entries/:id
 func (h *EntryHandler) GetEntry(c *gin.Context) {
-	idParam := c.Param("id")
+	// Get sanitized parameter from middleware
+	idParam := middleware.GetSanitizedParam(c, "id")
+
+	// Validate UUID format
+	if !utils.IsValidUUID(idParam) {
+		h.logger.Warn("invalid entry ID format", logging.String("id", idParam))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid entry ID format"})
+		return
+	}
 
 	// Parse UUID
 	id, err := uuid.Parse(idParam)
@@ -79,33 +81,6 @@ func (h *EntryHandler) GetEntry(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
-}
-
-// CreateEntry handles POST /api/v1/entries
-func (h *EntryHandler) CreateEntry(c *gin.Context) {
-	var req request.CreateEntryRequest
-
-	// Bind JSON body
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.logger.Warn("invalid create entry request", logging.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
-		return
-	}
-
-	// Call service
-	resp, err := h.service.CreateEntry(c.Request.Context(), &req)
-	if err != nil {
-		if database.IsDuplicateError(err) {
-			c.JSON(http.StatusConflict, gin.H{"error": "Entry already exists"})
-			return
-		}
-
-		h.logger.Error("failed to create entry", logging.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create entry"})
-		return
-	}
-
-	c.JSON(http.StatusCreated, resp)
 }
 
 // UpdateEntry handles PUT /api/v1/entries/:id
@@ -457,4 +432,42 @@ func (h *EntryHandler) ToggleMeaningLike(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// CreateEntry handles POST /api/v1/entries
+func (h *EntryHandler) CreateEntry(c *gin.Context) {
+	var req request.CreateEntryRequest
+
+	// Bind JSON body
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Warn("invalid create entry request", logging.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+		return
+	}
+
+	// Sanitize and validate input
+	req.Word = utils.SanitizeString(req.Word)
+	req.Pronunciation = utils.SanitizeString(req.Pronunciation)
+
+	// Validate entry type
+	if !utils.IsValidEntryType(req.Type) {
+		h.logger.Warn("invalid entry type", logging.String("type", req.Type))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid entry type. Must be one of: WORD, COMPOUND_WORD, PHRASE"})
+		return
+	}
+
+	// Call service
+	resp, err := h.service.CreateEntry(c.Request.Context(), &req)
+	if err != nil {
+		if database.IsDuplicateError(err) {
+			c.JSON(http.StatusConflict, gin.H{"error": "Entry already exists"})
+			return
+		}
+
+		h.logger.Error("failed to create entry", logging.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create entry"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, resp)
 }
