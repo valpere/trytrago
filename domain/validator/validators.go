@@ -27,7 +27,8 @@ func ValidateAlphaNumDash(fl validator.FieldLevel) bool {
 		return true
 	}
 
-	match, _ := regexp.MatchString("^[a-zA-Z0-9\\-]+$", value)
+	// Update the regex to include underscores
+	match, _ := regexp.MatchString("^[-a-zA-Z0-9_]+$", value)
 	return match
 }
 
