@@ -22,7 +22,7 @@ pushd "$PROJECT_ROOT"
 # go test -v -race ./test/unit/...
 
 # echo "Running integration tests..."
-# go test -v ./test/integration/...
+# INTEGRATION_TEST=true  go test -v ./test/integration/...
 
 # echo "Running API tests..."
 # go test -v ./test/api/...
@@ -30,7 +30,8 @@ pushd "$PROJECT_ROOT"
 # echo "Running auth flow tests..."
 # go test -v ./test/auth/...
 
-make test-all
+TEST_TYPE="$1"
+make ${TEST_TYPE:-"test-all"}
 
 popd
 

@@ -2,7 +2,9 @@ package repository_test
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -26,23 +28,33 @@ type PostgresRepositoryTestSuite struct {
 // SetupSuite initializes the test suite
 func (s *PostgresRepositoryTestSuite) SetupSuite() {
 	// Use environment variables or default values for database connection
-	dbHost := os.Getenv("TEST_DB_HOST")
+	dbHost := os.Getenv("TRYTRAGO_DATABASE_HOST")
 	if dbHost == "" {
 		dbHost = "localhost"
 	}
+	dbPort := os.Getenv("TRYTRAGO_DATABASE_PORT")
+	if dbPort == "" {
+		dbPort = "5432"
+	}
 
-	dbPort := 5432
-	dbUser := os.Getenv("TEST_DB_USER")
+	var err error
+	dbPortNum, err := strconv.Atoi(dbPort)
+	require.NoError(s.T(), err, "Failed to convert port to integer")
+
+	dbUser := os.Getenv("TRYTRAGO_DATABASE_USER")
+	fmt.Printf("#001: %v\n", dbUser)
 	if dbUser == "" {
 		dbUser = "postgres"
 	}
 
-	dbPassword := os.Getenv("TEST_DB_PASSWORD")
+	dbPassword := os.Getenv("TRYTRAGO_DATABASE_PASSWORD")
+	fmt.Printf("#002: %v\n", dbPassword)
 	if dbPassword == "" {
 		dbPassword = "postgres"
 	}
 
-	dbName := os.Getenv("TEST_DB_NAME")
+	dbName := os.Getenv("TRYTRAGO_DATABASE_NAME")
+	fmt.Printf("#003: %v\n", dbName)
 	if dbName == "" {
 		dbName = "trytrago_test"
 	}
@@ -54,7 +66,7 @@ func (s *PostgresRepositoryTestSuite) SetupSuite() {
 	opts := repository.Options{
 		Driver:          "postgres",
 		Host:            dbHost,
-		Port:            dbPort,
+		Port:            dbPortNum,
 		Database:        dbName,
 		Username:        dbUser,
 		Password:        dbPassword,
@@ -66,7 +78,6 @@ func (s *PostgresRepositoryTestSuite) SetupSuite() {
 	}
 
 	// Create repository
-	var err error
 	s.repo, err = postgres.NewRepository(s.ctx, opts)
 	require.NoError(s.T(), err, "Failed to create repository")
 

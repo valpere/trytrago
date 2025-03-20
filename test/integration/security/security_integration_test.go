@@ -1,3 +1,4 @@
+// test/integration/security/security_integration_test.go
 package security_test
 
 import (
@@ -10,6 +11,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
 	"github.com/stretchr/testify/assert"
 	"github.com/valpere/trytrago/domain/logging"
@@ -68,22 +70,6 @@ func (m *MockLogger) Error(msg string, fields ...zapcore.Field)   {}
 func (m *MockLogger) With(fields ...zapcore.Field) logging.Logger { return m }
 func (m *MockLogger) Sync() error                                 { return nil }
 
-// binding module access
-type binding struct{}
-
-func (binding) Validator() interface{} {
-	return nil
-}
-
-// Mock the binding.Validator access
-var binding = struct {
-	Validator interface {
-		Engine() interface{}
-	}
-}{
-	Validator: validator.New(),
-}
-
 func TestSecurityHeadersIntegration(t *testing.T) {
 	router := setupSecureTestServer(t)
 
@@ -125,8 +111,8 @@ func TestCORSHeadersIntegration(t *testing.T) {
 	// Assert response
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	// Check CORS headers
-	assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
+	// Check CORS headers - expect the origin to be reflected back
+	assert.Equal(t, "https://example.com", w.Header().Get("Access-Control-Allow-Origin"))
 	assert.Contains(t, w.Header().Get("Access-Control-Allow-Methods"), "GET")
 }
 
