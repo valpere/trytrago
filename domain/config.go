@@ -10,30 +10,43 @@ import (
 // Config represents the application configuration
 type Config struct {
 	// Server configuration
+	// Server configuration
 	Server struct {
-		Port         int           `mapstructure:"port" yaml:"port"`
-		Timeout      time.Duration `mapstructure:"timeout" yaml:"timeout"`
-		ReadTimeout  time.Duration `mapstructure:"read_timeout" yaml:"read_timeout"`
-		WriteTimeout time.Duration `mapstructure:"write_timeout" yaml:"write_timeout"`
-		TLS          struct {
+		Port           int           `mapstructure:"port" yaml:"port"`
+		Timeout        time.Duration `mapstructure:"timeout" yaml:"timeout"`
+		ReadTimeout    time.Duration `mapstructure:"read_timeout" yaml:"read_timeout"`
+		WriteTimeout   time.Duration `mapstructure:"write_timeout" yaml:"write_timeout"`
+		AllowedOrigins []string      `mapstructure:"allowed_origins" yaml:"allowed_origins"`
+		AllowedMethods []string      `mapstructure:"allowed_methods" yaml:"allowed_methods"`
+		MaxRequestSize int64         `mapstructure:"max_request_size" yaml:"max_request_size"`
+		TLS            struct {
 			Enabled  bool   `mapstructure:"enabled" yaml:"enabled"`
 			CertFile string `mapstructure:"cert_file" yaml:"cert_file"`
 			KeyFile  string `mapstructure:"key_file" yaml:"key_file"`
 		} `mapstructure:"tls" yaml:"tls"`
+		Security struct {
+			CSPPolicy             string `mapstructure:"csp_policy" yaml:"csp_policy"`
+			ReferrerPolicy        string `mapstructure:"referrer_policy" yaml:"referrer_policy"`
+			XFrameOptions         string `mapstructure:"x_frame_options" yaml:"x_frame_options"`
+			XSSProtection         bool   `mapstructure:"xss_protection" yaml:"xss_protection"`
+			ContentTypeNosniff    bool   `mapstructure:"content_type_nosniff" yaml:"content_type_nosniff"`
+			HSTSMaxAge            int    `mapstructure:"hsts_max_age" yaml:"hsts_max_age"`
+			HSTSIncludeSubdomains bool   `mapstructure:"hsts_include_subdomains" yaml:"hsts_include_subdomains"`
+		} `mapstructure:"security" yaml:"security"`
 	} `mapstructure:"server" yaml:"server"`
 
 	// Database configuration
 	Database struct {
-		Type          string        `mapstructure:"type" yaml:"type"`
-		Host          string        `mapstructure:"host" yaml:"host"`
-		Port          int           `mapstructure:"port" yaml:"port"`
-		User          string        `mapstructure:"user" yaml:"user"`
-		Password      string        `mapstructure:"password" yaml:"password"`
-		Name          string        `mapstructure:"name" yaml:"name"`
-		SSLMode       string        `mapstructure:"sslmode" yaml:"sslmode"`
-		MaxOpenConns  int           `mapstructure:"max_open_conns" yaml:"max_open_conns"`
-		MaxIdleConns  int           `mapstructure:"max_idle_conns" yaml:"max_idle_conns"`
-		ConnLifetime  time.Duration `mapstructure:"conn_lifetime" yaml:"conn_lifetime"`
+		Type         string        `mapstructure:"type" yaml:"type"`
+		Host         string        `mapstructure:"host" yaml:"host"`
+		Port         int           `mapstructure:"port" yaml:"port"`
+		User         string        `mapstructure:"user" yaml:"user"`
+		Password     string        `mapstructure:"password" yaml:"password"`
+		Name         string        `mapstructure:"name" yaml:"name"`
+		SSLMode      string        `mapstructure:"sslmode" yaml:"sslmode"`
+		MaxOpenConns int           `mapstructure:"max_open_conns" yaml:"max_open_conns"`
+		MaxIdleConns int           `mapstructure:"max_idle_conns" yaml:"max_idle_conns"`
+		ConnLifetime time.Duration `mapstructure:"conn_lifetime" yaml:"conn_lifetime"`
 	} `mapstructure:"database" yaml:"database"`
 
 	// Logging configuration
@@ -54,18 +67,18 @@ type Config struct {
 
 	// Cache configuration
 	Cache struct {
-		Enabled       bool          `mapstructure:"enabled" yaml:"enabled"`
-		Type          string        `mapstructure:"type" yaml:"type"`
-		Host          string        `mapstructure:"host" yaml:"host"`
-		Port          int           `mapstructure:"port" yaml:"port"`
-		Address       string        `mapstructure:"address" yaml:"address"` // Combined host:port
-		Password      string        `mapstructure:"password" yaml:"password"`
-		DB            int           `mapstructure:"db" yaml:"db"`
-		TTL           time.Duration `mapstructure:"ttl" yaml:"ttl"`
-		KeyPrefix     string        `mapstructure:"key_prefix" yaml:"key_prefix"`
-		EntryTTL      time.Duration `mapstructure:"entry_ttl" yaml:"entry_ttl"`
-		ListTTL       time.Duration `mapstructure:"list_ttl" yaml:"list_ttl"`
-		SocialTTL     time.Duration `mapstructure:"social_ttl" yaml:"social_ttl"`
+		Enabled        bool          `mapstructure:"enabled" yaml:"enabled"`
+		Type           string        `mapstructure:"type" yaml:"type"`
+		Host           string        `mapstructure:"host" yaml:"host"`
+		Port           int           `mapstructure:"port" yaml:"port"`
+		Address        string        `mapstructure:"address" yaml:"address"` // Combined host:port
+		Password       string        `mapstructure:"password" yaml:"password"`
+		DB             int           `mapstructure:"db" yaml:"db"`
+		TTL            time.Duration `mapstructure:"ttl" yaml:"ttl"`
+		KeyPrefix      string        `mapstructure:"key_prefix" yaml:"key_prefix"`
+		EntryTTL       time.Duration `mapstructure:"entry_ttl" yaml:"entry_ttl"`
+		ListTTL        time.Duration `mapstructure:"list_ttl" yaml:"list_ttl"`
+		SocialTTL      time.Duration `mapstructure:"social_ttl" yaml:"social_ttl"`
 		TranslationTTL time.Duration `mapstructure:"translation_ttl" yaml:"translation_ttl"`
 	} `mapstructure:"cache" yaml:"cache"`
 
@@ -105,12 +118,12 @@ func (c *Config) Validate() error {
 	if c.Auth.RefreshTokenDuration <= 0 {
 		return fmt.Errorf("refresh token duration must be positive")
 	}
-	
+
 	// If cache is enabled but address not specified, construct it from host and port
 	if c.Cache.Enabled && c.Cache.Address == "" && c.Cache.Host != "" {
 		c.Cache.Address = fmt.Sprintf("%s:%d", c.Cache.Host, c.Cache.Port)
 	}
-	
+
 	// Set default cache TTLs if not specified
 	if c.Cache.Enabled {
 		if c.Cache.TTL <= 0 {

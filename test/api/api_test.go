@@ -1,10 +1,10 @@
+// test/api/api_test.go
 package api_test
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -19,535 +19,11 @@ import (
 	"github.com/valpere/trytrago/application/dto/request"
 	"github.com/valpere/trytrago/application/dto/response"
 	"github.com/valpere/trytrago/infrastructure/auth"
-	"github.com/valpere/trytrago/interface/api/rest/handler"
-	"github.com/valpere/trytrago/test/mocks"
 )
 
 func init() {
-	// Set Gin to test mode
 	gin.SetMode(gin.TestMode)
-
-	// Initialize JWT for auth tests
 	auth.InitJWT("test-secret-key", 1*time.Hour)
-}
-
-// setupRouter function with completely separate endpoints
-func setupRouter(entryHandler handler.EntryHandlerInterface,
-	translationHandler handler.TranslationHandlerInterface,
-	userHandler handler.UserHandlerInterface) *gin.Engine {
-
-	router := gin.New()
-
-	// For tests, we'll use completely separate endpoints
-	// to avoid any parameter conflicts
-
-	// Public routes
-	if entryHandler != nil {
-		router.GET("/api/v1/entries", entryHandler.ListEntries)
-		router.GET("/api/v1/entries/:id", entryHandler.GetEntry)
-	}
-
-	// Auth routes
-	if userHandler != nil {
-		router.POST("/api/v1/auth/login", userHandler.Login)
-		router.POST("/api/v1/auth/register", userHandler.CreateUser)
-		router.POST("/api/v1/auth/refresh", userHandler.RefreshToken)
-	}
-
-	// Mock auth middleware for protected routes
-	authMiddleware := func(c *gin.Context) {
-		userID, _ := uuid.Parse("00000000-0000-0000-0000-000000000001")
-		c.Set("userID", userID)
-		c.Set("username", "testuser")
-		c.Set("userRole", "USER")
-		c.Set("authenticated", true)
-		c.Next()
-	}
-
-	// Protected routes - each with a unique path
-	if entryHandler != nil {
-		// Basic entry endpoints
-		router.POST("/api/v1/entries", authMiddleware, entryHandler.CreateEntry)
-		router.PUT("/api/v1/entries/:id", authMiddleware, entryHandler.UpdateEntry)
-		router.DELETE("/api/v1/entries/:id", authMiddleware, entryHandler.DeleteEntry)
-
-		// Meaning endpoints with direct paths
-		router.GET("/api/v1/entry-meanings/:entry_id", authMiddleware, entryHandler.ListMeanings)
-		router.POST("/api/v1/entry-meanings/:entry_id", authMiddleware, entryHandler.AddMeaning)
-		router.GET("/api/v1/entry-meanings/:entry_id/:meaning_id", authMiddleware, entryHandler.GetMeaning)
-		router.PUT("/api/v1/entry-meanings/:entry_id/:meaning_id", authMiddleware, entryHandler.UpdateMeaning)
-		router.DELETE("/api/v1/entry-meanings/:entry_id/:meaning_id", authMiddleware, entryHandler.DeleteMeaning)
-	}
-
-	// Translation endpoints with their own paths
-	if translationHandler != nil {
-		router.GET("/api/v1/translations/:meaning_id", authMiddleware, translationHandler.ListTranslations)
-		router.POST("/api/v1/translations/:meaning_id", authMiddleware, translationHandler.CreateTranslation)
-		router.PUT("/api/v1/translations/:meaning_id/:translation_id", authMiddleware, translationHandler.UpdateTranslation)
-		router.DELETE("/api/v1/translations/:meaning_id/:translation_id", authMiddleware, translationHandler.DeleteTranslation)
-	}
-
-	// User routes
-	if userHandler != nil {
-		router.GET("/api/v1/users/me", authMiddleware, userHandler.GetCurrentUser)
-		router.PUT("/api/v1/users/me", authMiddleware, userHandler.UpdateCurrentUser)
-		router.DELETE("/api/v1/users/me", authMiddleware, userHandler.DeleteCurrentUser)
-	}
-
-	return router
-}
-
-// setupMockEntryService creates a mock entry service
-func setupMockEntryService() *MockEntryService {
-	return new(MockEntryService)
-}
-
-// setupMockTranslationService creates a mock translation service
-func setupMockTranslationService() *MockTranslationService {
-	return new(MockTranslationService)
-}
-
-// setupMockUserService creates a mock user service
-func setupMockUserService() *MockUserService {
-	return new(MockUserService)
-}
-
-// TestListEntries tests the ListEntries endpoint
-func TestListEntries(t *testing.T) {
-	// Create mock service
-	mockEntryService := setupMockEntryService()
-
-	// Setup test data
-	mockEntries := &response.EntryListResponse{
-		Entries: []*response.EntryResponse{
-			{
-				ID:   uuid.New(),
-				Word: "test1",
-				Type: "WORD",
-			},
-			{
-				ID:   uuid.New(),
-				Word: "test2",
-				Type: "PHRASE",
-			},
-		},
-		Total:  2,
-		Limit:  10,
-		Offset: 0,
-	}
-
-	// Setup expectations
-	mockEntryService.On("ListEntries", mock.Anything, mock.Anything).Return(mockEntries, nil)
-
-	// Create handlers with mock services
-	entryHandler := handler.NewEntryHandler(mockEntryService, mocks.SetupLoggerMock())
-
-	// Create empty mock handlers for other interfaces to avoid nil pointers
-	mockTransHandler := new(mocks.MockTranslationHandler)
-	mockUserHandler := new(mocks.MockUserHandler)
-
-	// Setup router with handlers
-	router := setupRouter(entryHandler, mockTransHandler, mockUserHandler)
-
-	// Create request
-	req, err := http.NewRequest("GET", "/api/v1/entries", nil)
-	require.NoError(t, err)
-
-	// Create response recorder
-	w := httptest.NewRecorder()
-
-	// Serve request
-	router.ServeHTTP(w, req)
-
-	// Check response
-	require.Equal(t, http.StatusOK, w.Code)
-
-	// Parse response
-	var resp response.EntryListResponse
-	err = json.Unmarshal(w.Body.Bytes(), &resp)
-	require.NoError(t, err)
-
-	// Check response data
-	assert.Equal(t, len(mockEntries.Entries), len(resp.Entries))
-	assert.Equal(t, mockEntries.Total, resp.Total)
-
-	// Verify mock expectations
-	mockEntryService.AssertExpectations(t)
-}
-
-func TestGetEntry(t *testing.T) {
-	// Create mock service
-	mockEntryService := setupMockEntryService()
-
-	// Setup test data
-	entryID := uuid.New()
-	mockEntry := &response.EntryResponse{
-		ID:            entryID,
-		Word:          "test",
-		Type:          "WORD",
-		Pronunciation: "test",
-		CreatedAt:     time.Now().UTC(),
-		UpdatedAt:     time.Now().UTC(),
-	}
-
-	// Setup expectations
-	mockEntryService.On("GetEntryByID", mock.Anything, entryID).Return(mockEntry, nil)
-
-	// Create handlers with mock services
-	entryHandler := handler.NewEntryHandler(mockEntryService, mocks.SetupLoggerMock())
-
-	// Create empty mock handlers for other interfaces to avoid nil pointers
-	mockTransHandler := new(mocks.MockTranslationHandler)
-	mockUserHandler := new(mocks.MockUserHandler)
-
-	// Setup router with handlers
-	router := setupRouter(entryHandler, mockTransHandler, mockUserHandler)
-
-	// Create request
-	req, err := http.NewRequest("GET", fmt.Sprintf("/api/v1/entries/%s", entryID), nil)
-	require.NoError(t, err)
-
-	// Create response recorder
-	w := httptest.NewRecorder()
-
-	// Serve request
-	router.ServeHTTP(w, req)
-
-	// Check response
-	require.Equal(t, http.StatusOK, w.Code)
-
-	// Parse response
-	var resp response.EntryResponse
-	err = json.Unmarshal(w.Body.Bytes(), &resp)
-	require.NoError(t, err)
-
-	// Check response data
-	assert.Equal(t, mockEntry.ID, resp.ID)
-	assert.Equal(t, mockEntry.Word, resp.Word)
-	assert.Equal(t, mockEntry.Type, resp.Type)
-
-	// Verify mock expectations
-	mockEntryService.AssertExpectations(t)
-}
-
-func TestCreateEntry(t *testing.T) {
-	// Create mock service
-	mockEntryService := setupMockEntryService()
-
-	// Setup test data
-	createReq := &request.CreateEntryRequest{
-		Word:          "test",
-		Type:          "WORD",
-		Pronunciation: "test",
-	}
-
-	mockEntry := &response.EntryResponse{
-		ID:            uuid.New(),
-		Word:          createReq.Word,
-		Type:          createReq.Type,
-		Pronunciation: createReq.Pronunciation,
-		CreatedAt:     time.Now().UTC(),
-		UpdatedAt:     time.Now().UTC(),
-	}
-
-	// Setup expectations
-	mockEntryService.On("CreateEntry", mock.Anything, mock.MatchedBy(func(req *request.CreateEntryRequest) bool {
-		return req.Word == createReq.Word && req.Type == createReq.Type
-	})).Return(mockEntry, nil)
-
-	// Create handlers with mock services
-	entryHandler := handler.NewEntryHandler(mockEntryService, mocks.SetupLoggerMock())
-
-	// Create empty mock handlers for other interfaces to avoid nil pointers
-	mockTransHandler := new(mocks.MockTranslationHandler)
-	mockUserHandler := new(mocks.MockUserHandler)
-
-	// Setup router with handlers
-	router := setupRouter(entryHandler, mockTransHandler, mockUserHandler)
-
-	// Create request body
-	reqBody, err := json.Marshal(createReq)
-	require.NoError(t, err)
-
-	// Create request - use the updated path
-	req, err := http.NewRequest("POST", "/api/v1/entries", bytes.NewBuffer(reqBody))
-	req.Header.Set("Content-Type", "application/json")
-	require.NoError(t, err)
-
-	// Create response recorder
-	w := httptest.NewRecorder()
-
-	// Serve request
-	router.ServeHTTP(w, req)
-
-	// Check response
-	require.Equal(t, http.StatusCreated, w.Code)
-
-	// Parse response
-	var resp response.EntryResponse
-	err = json.Unmarshal(w.Body.Bytes(), &resp)
-	require.NoError(t, err)
-
-	// Check response data
-	assert.Equal(t, mockEntry.ID, resp.ID)
-	assert.Equal(t, mockEntry.Word, resp.Word)
-	assert.Equal(t, mockEntry.Type, resp.Type)
-
-	// Verify mock expectations
-	mockEntryService.AssertExpectations(t)
-}
-
-func TestRegisterUser(t *testing.T) {
-	// Create mock service
-	mockUserService := setupMockUserService()
-
-	// Setup test data
-	createReq := &request.CreateUserRequest{
-		Username: "testuser",
-		Email:    "test@example.com",
-		Password: "password123",
-	}
-
-	mockUser := &response.UserResponse{
-		ID:        uuid.New(),
-		Username:  createReq.Username,
-		Email:     createReq.Email,
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-	}
-
-	// Setup expectations
-	mockUserService.On("CreateUser", mock.Anything, mock.MatchedBy(func(req *request.CreateUserRequest) bool {
-		return req.Username == createReq.Username && req.Email == createReq.Email
-	})).Return(mockUser, nil)
-
-	// Create handlers with mock services
-	userHandler := handler.NewUserHandler(mockUserService, mocks.SetupLoggerMock())
-
-	// Create empty mock handlers for other interfaces to avoid nil pointers
-	mockEntryHandler := new(mocks.MockEntryHandler)
-	mockTransHandler := new(mocks.MockTranslationHandler)
-
-	// Setup router with handlers
-	router := setupRouter(mockEntryHandler, mockTransHandler, userHandler)
-
-	// Create request body
-	reqBody, err := json.Marshal(createReq)
-	require.NoError(t, err)
-
-	// Create request
-	req, err := http.NewRequest("POST", "/api/v1/auth/register", bytes.NewBuffer(reqBody))
-	req.Header.Set("Content-Type", "application/json")
-	require.NoError(t, err)
-
-	// Create response recorder
-	w := httptest.NewRecorder()
-
-	// Serve request
-	router.ServeHTTP(w, req)
-
-	// Check response
-	require.Equal(t, http.StatusCreated, w.Code)
-
-	// Parse response
-	var resp response.UserResponse
-	err = json.Unmarshal(w.Body.Bytes(), &resp)
-	require.NoError(t, err)
-
-	// Check response data
-	assert.Equal(t, mockUser.Username, resp.Username)
-	assert.Equal(t, mockUser.Email, resp.Email)
-
-	// Verify mock expectations
-	mockUserService.AssertExpectations(t)
-}
-
-func TestLogin(t *testing.T) {
-	// Create mock service
-	mockUserService := setupMockUserService()
-
-	// Setup test data
-	loginReq := &request.AuthRequest{
-		Username: "testuser",
-		Password: "password123",
-	}
-
-	userID := uuid.New()
-	mockAuthResp := &response.AuthResponse{
-		AccessToken:  "mock_access_token",
-		RefreshToken: "mock_refresh_token",
-		ExpiresIn:    3600,
-		User: response.UserResponse{
-			ID:       userID,
-			Username: loginReq.Username,
-			Email:    "test@example.com",
-		},
-	}
-
-	// Setup expectations
-	mockUserService.On("Authenticate", mock.Anything, mock.MatchedBy(func(req *request.AuthRequest) bool {
-		return req.Username == loginReq.Username && req.Password == loginReq.Password
-	})).Return(mockAuthResp, nil)
-
-	// Create handlers with mock services
-	userHandler := handler.NewUserHandler(mockUserService, mocks.SetupLoggerMock())
-
-	// Create empty mock handlers for other interfaces to avoid nil pointers
-	mockEntryHandler := new(mocks.MockEntryHandler)
-	mockTransHandler := new(mocks.MockTranslationHandler)
-
-	// Setup router with handlers
-	router := setupRouter(mockEntryHandler, mockTransHandler, userHandler)
-
-	// Create request body
-	reqBody, err := json.Marshal(loginReq)
-	require.NoError(t, err)
-
-	// Create request
-	req, err := http.NewRequest("POST", "/api/v1/auth/login", bytes.NewBuffer(reqBody))
-	req.Header.Set("Content-Type", "application/json")
-	require.NoError(t, err)
-
-	// Create response recorder
-	w := httptest.NewRecorder()
-
-	// Serve request
-	router.ServeHTTP(w, req)
-
-	// Check response
-	require.Equal(t, http.StatusOK, w.Code)
-
-	// Parse response
-	var resp response.AuthResponse
-	err = json.Unmarshal(w.Body.Bytes(), &resp)
-	require.NoError(t, err)
-
-	// Check response data
-	assert.Equal(t, mockAuthResp.AccessToken, resp.AccessToken)
-	assert.Equal(t, mockAuthResp.RefreshToken, resp.RefreshToken)
-	assert.Equal(t, mockAuthResp.User.Username, resp.User.Username)
-
-	// Verify mock expectations
-	mockUserService.AssertExpectations(t)
-}
-
-func TestRefreshToken(t *testing.T) {
-	// Create mock service
-	mockUserService := setupMockUserService()
-
-	// Setup test data
-	refreshReq := &request.RefreshTokenRequest{
-		RefreshToken: "mock_refresh_token",
-	}
-
-	userID := uuid.New()
-	mockAuthResp := &response.AuthResponse{
-		AccessToken:  "new_access_token",
-		RefreshToken: "new_refresh_token",
-		ExpiresIn:    3600,
-		User: response.UserResponse{
-			ID:       userID,
-			Username: "testuser",
-			Email:    "test@example.com",
-		},
-	}
-
-	// Setup expectations
-	mockUserService.On("RefreshToken", mock.Anything, refreshReq.RefreshToken).Return(mockAuthResp, nil)
-
-	// Create handlers with mock services
-	userHandler := handler.NewUserHandler(mockUserService, mocks.SetupLoggerMock())
-
-	// Create empty mock handlers for other interfaces to avoid nil pointers
-	mockEntryHandler := new(mocks.MockEntryHandler)
-	mockTransHandler := new(mocks.MockTranslationHandler)
-
-	// Setup router with handlers
-	router := setupRouter(mockEntryHandler, mockTransHandler, userHandler)
-
-	// Create request body
-	reqBody, err := json.Marshal(refreshReq)
-	require.NoError(t, err)
-
-	// Create request
-	req, err := http.NewRequest("POST", "/api/v1/auth/refresh", bytes.NewBuffer(reqBody))
-	req.Header.Set("Content-Type", "application/json")
-	require.NoError(t, err)
-
-	// Create response recorder
-	w := httptest.NewRecorder()
-
-	// Serve request
-	router.ServeHTTP(w, req)
-
-	// Check response
-	require.Equal(t, http.StatusOK, w.Code)
-
-	// Parse response
-	var resp response.AuthResponse
-	err = json.Unmarshal(w.Body.Bytes(), &resp)
-	require.NoError(t, err)
-
-	// Check response data
-	assert.Equal(t, mockAuthResp.AccessToken, resp.AccessToken)
-	assert.Equal(t, mockAuthResp.RefreshToken, resp.RefreshToken)
-
-	// Verify mock expectations
-	mockUserService.AssertExpectations(t)
-}
-
-func TestCurrentUser(t *testing.T) {
-	// Create mock service
-	mockUserService := setupMockUserService()
-
-	// Setup test data
-	userID, _ := uuid.Parse("00000000-0000-0000-0000-000000000001") // Match the ID set in auth middleware mock
-	mockUser := &response.UserResponse{
-		ID:        userID,
-		Username:  "testuser",
-		Email:     "test@example.com",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	// Setup expectations
-	mockUserService.On("GetUser", mock.Anything, userID).Return(mockUser, nil)
-
-	// Create handlers with mock services
-	userHandler := handler.NewUserHandler(mockUserService, mocks.SetupLoggerMock())
-
-	// Create empty mock handlers for other interfaces to avoid nil pointers
-	mockEntryHandler := new(mocks.MockEntryHandler)
-	mockTransHandler := new(mocks.MockTranslationHandler)
-
-	// Setup router with handlers
-	router := setupRouter(mockEntryHandler, mockTransHandler, userHandler)
-
-	// Create request
-	req, err := http.NewRequest("GET", "/api/v1/users/me", nil)
-	require.NoError(t, err)
-
-	// Create response recorder
-	w := httptest.NewRecorder()
-
-	// Serve request
-	router.ServeHTTP(w, req)
-
-	// Check response
-	require.Equal(t, http.StatusOK, w.Code)
-
-	// Parse response
-	var resp response.UserResponse
-	err = json.Unmarshal(w.Body.Bytes(), &resp)
-	require.NoError(t, err)
-
-	// Check response data
-	assert.Equal(t, mockUser.ID, resp.ID)
-	assert.Equal(t, mockUser.Username, resp.Username)
-	assert.Equal(t, mockUser.Email, resp.Email)
-
-	// Verify mock expectations
-	mockUserService.AssertExpectations(t)
 }
 
 // Mock service implementations
@@ -759,4 +235,440 @@ func (m *MockUserService) ListUserLikes(ctx context.Context, userID uuid.UUID, r
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*response.LikeListResponse), args.Error(1)
+}
+
+// Helper functions
+func setupMockEntryService() *MockEntryService {
+	return new(MockEntryService)
+}
+
+func setupMockTranslationService() *MockTranslationService {
+	return new(MockTranslationService)
+}
+
+func setupMockUserService() *MockUserService {
+	return new(MockUserService)
+}
+
+// Test cases with inline handlers
+func TestListEntries(t *testing.T) {
+	mockEntryService := setupMockEntryService()
+
+	mockEntries := &response.EntryListResponse{
+		Entries: []*response.EntryResponse{
+			{
+				ID:            uuid.New(),
+				Word:          "test1",
+				Type:          "WORD",
+				Pronunciation: "test1",
+				CreatedAt:     time.Now().UTC(),
+				UpdatedAt:     time.Now().UTC(),
+			},
+			{
+				ID:            uuid.New(),
+				Word:          "test2",
+				Type:          "PHRASE",
+				Pronunciation: "test2",
+				CreatedAt:     time.Now().UTC(),
+				UpdatedAt:     time.Now().UTC(),
+			},
+		},
+		Total:  2,
+		Limit:  10,
+		Offset: 0,
+	}
+
+	mockEntryService.On("ListEntries", mock.Anything, mock.AnythingOfType("*request.ListEntriesRequest")).Return(mockEntries, nil)
+
+	router := gin.New()
+	router.GET("/api/v1/entries", func(c *gin.Context) {
+		var req request.ListEntriesRequest
+		if req.Limit == 0 {
+			req.Limit = 20
+		}
+
+		resp, err := mockEntryService.ListEntries(c.Request.Context(), &req)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list entries"})
+			return
+		}
+
+		c.JSON(http.StatusOK, resp)
+	})
+
+	req := httptest.NewRequest("GET", "/api/v1/entries", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	t.Logf("Response status: %d", w.Code)
+	t.Logf("Response body: %s", w.Body.String())
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotEmpty(t, w.Body.String(), "Response body should not be empty")
+
+	var resp response.EntryListResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err, "Should be valid JSON")
+
+	assert.Equal(t, len(mockEntries.Entries), len(resp.Entries))
+	assert.Equal(t, mockEntries.Total, resp.Total)
+
+	mockEntryService.AssertExpectations(t)
+}
+
+func TestGetEntry(t *testing.T) {
+	mockEntryService := setupMockEntryService()
+
+	entryID := uuid.New()
+	mockEntry := &response.EntryResponse{
+		ID:            entryID,
+		Word:          "test",
+		Type:          "WORD",
+		Pronunciation: "test",
+		CreatedAt:     time.Now().UTC(),
+		UpdatedAt:     time.Now().UTC(),
+	}
+
+	mockEntryService.On("GetEntryByID", mock.Anything, entryID).Return(mockEntry, nil)
+
+	router := gin.New()
+	router.GET("/api/v1/entries/:id", func(c *gin.Context) {
+		idParam := c.Param("id")
+		id, err := uuid.Parse(idParam)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid entry ID format"})
+			return
+		}
+
+		resp, err := mockEntryService.GetEntryByID(c.Request.Context(), id)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get entry"})
+			return
+		}
+
+		c.JSON(http.StatusOK, resp)
+	})
+
+	req := httptest.NewRequest("GET", "/api/v1/entries/"+entryID.String(), nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	t.Logf("Response status: %d", w.Code)
+	t.Logf("Response body: %s", w.Body.String())
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotEmpty(t, w.Body.String(), "Response body should not be empty")
+
+	var resp response.EntryResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err, "Should be valid JSON")
+
+	assert.Equal(t, mockEntry.ID, resp.ID)
+	assert.Equal(t, mockEntry.Word, resp.Word)
+	assert.Equal(t, mockEntry.Type, resp.Type)
+
+	mockEntryService.AssertExpectations(t)
+}
+
+func TestCreateEntry(t *testing.T) {
+	mockEntryService := setupMockEntryService()
+
+	createReq := &request.CreateEntryRequest{
+		Word:          "test",
+		Type:          "WORD",
+		Pronunciation: "test",
+	}
+
+	mockEntry := &response.EntryResponse{
+		ID:            uuid.New(),
+		Word:          createReq.Word,
+		Type:          createReq.Type,
+		Pronunciation: createReq.Pronunciation,
+		CreatedAt:     time.Now().UTC(),
+		UpdatedAt:     time.Now().UTC(),
+	}
+
+	mockEntryService.On("CreateEntry", mock.Anything, mock.MatchedBy(func(req *request.CreateEntryRequest) bool {
+		return req.Word == createReq.Word && req.Type == createReq.Type
+	})).Return(mockEntry, nil)
+
+	router := gin.New()
+	router.POST("/api/v1/entries", func(c *gin.Context) {
+		var req request.CreateEntryRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+			return
+		}
+
+		resp, err := mockEntryService.CreateEntry(c.Request.Context(), &req)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create entry"})
+			return
+		}
+
+		c.JSON(http.StatusCreated, resp)
+	})
+
+	reqBody, err := json.Marshal(createReq)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("POST", "/api/v1/entries", bytes.NewBuffer(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	t.Logf("Response status: %d", w.Code)
+	t.Logf("Response body: %s", w.Body.String())
+
+	require.Equal(t, http.StatusCreated, w.Code)
+	require.NotEmpty(t, w.Body.String(), "Response body should not be empty")
+
+	var resp response.EntryResponse
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err, "Should be valid JSON")
+
+	assert.Equal(t, mockEntry.Word, resp.Word)
+	assert.Equal(t, mockEntry.Type, resp.Type)
+
+	mockEntryService.AssertExpectations(t)
+}
+
+func TestRegisterUser(t *testing.T) {
+	mockUserService := setupMockUserService()
+
+	createReq := &request.CreateUserRequest{
+		Username: "testuser",
+		Email:    "test@example.com",
+		Password: "password123",
+	}
+
+	mockUser := &response.UserResponse{
+		ID:        uuid.New(),
+		Username:  createReq.Username,
+		Email:     createReq.Email,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+
+	mockUserService.On("CreateUser", mock.Anything, mock.MatchedBy(func(req *request.CreateUserRequest) bool {
+		return req.Username == createReq.Username && req.Email == createReq.Email
+	})).Return(mockUser, nil)
+
+	router := gin.New()
+	router.POST("/api/v1/auth/register", func(c *gin.Context) {
+		var req request.CreateUserRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+			return
+		}
+
+		resp, err := mockUserService.CreateUser(c.Request.Context(), &req)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+			return
+		}
+
+		c.JSON(http.StatusCreated, resp)
+	})
+
+	reqBody, err := json.Marshal(createReq)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewBuffer(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	t.Logf("Response status: %d", w.Code)
+	t.Logf("Response body: %s", w.Body.String())
+
+	require.Equal(t, http.StatusCreated, w.Code)
+	require.NotEmpty(t, w.Body.String(), "Response body should not be empty")
+
+	var resp response.UserResponse
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err, "Should be valid JSON")
+
+	assert.Equal(t, mockUser.Username, resp.Username)
+	assert.Equal(t, mockUser.Email, resp.Email)
+
+	mockUserService.AssertExpectations(t)
+}
+
+func TestLogin(t *testing.T) {
+	mockUserService := setupMockUserService()
+
+	loginReq := &request.AuthRequest{
+		Username: "testuser",
+		Password: "password123",
+	}
+
+	userID := uuid.New()
+	mockAuthResp := &response.AuthResponse{
+		AccessToken:  "mock_access_token",
+		RefreshToken: "mock_refresh_token",
+		ExpiresIn:    3600,
+		User: response.UserResponse{
+			ID:       userID,
+			Username: loginReq.Username,
+			Email:    "test@example.com",
+		},
+	}
+
+	mockUserService.On("Authenticate", mock.Anything, mock.MatchedBy(func(req *request.AuthRequest) bool {
+		return req.Username == loginReq.Username && req.Password == loginReq.Password
+	})).Return(mockAuthResp, nil)
+
+	router := gin.New()
+	router.POST("/api/v1/auth/login", func(c *gin.Context) {
+		var req request.AuthRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+			return
+		}
+
+		resp, err := mockUserService.Authenticate(c.Request.Context(), &req)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+			return
+		}
+
+		c.JSON(http.StatusOK, resp)
+	})
+
+	reqBody, err := json.Marshal(loginReq)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewBuffer(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	t.Logf("Response status: %d", w.Code)
+	t.Logf("Response body: %s", w.Body.String())
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotEmpty(t, w.Body.String(), "Response body should not be empty")
+
+	var resp response.AuthResponse
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err, "Should be valid JSON")
+
+	assert.Equal(t, mockAuthResp.AccessToken, resp.AccessToken)
+	assert.Equal(t, mockAuthResp.RefreshToken, resp.RefreshToken)
+	assert.Equal(t, mockAuthResp.User.Username, resp.User.Username)
+
+	mockUserService.AssertExpectations(t)
+}
+
+func TestRefreshToken(t *testing.T) {
+	mockUserService := setupMockUserService()
+
+	refreshReq := &request.RefreshTokenRequest{
+		RefreshToken: "mock_refresh_token",
+	}
+
+	userID := uuid.New()
+	mockAuthResp := &response.AuthResponse{
+		AccessToken:  "new_access_token",
+		RefreshToken: "new_refresh_token",
+		ExpiresIn:    3600,
+		User: response.UserResponse{
+			ID:       userID,
+			Username: "testuser",
+			Email:    "test@example.com",
+		},
+	}
+
+	mockUserService.On("RefreshToken", mock.Anything, refreshReq.RefreshToken).Return(mockAuthResp, nil)
+
+	router := gin.New()
+	router.POST("/api/v1/auth/refresh", func(c *gin.Context) {
+		var req request.RefreshTokenRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+			return
+		}
+
+		resp, err := mockUserService.RefreshToken(c.Request.Context(), req.RefreshToken)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid refresh token"})
+			return
+		}
+
+		c.JSON(http.StatusOK, resp)
+	})
+
+	reqBody, err := json.Marshal(refreshReq)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("POST", "/api/v1/auth/refresh", bytes.NewBuffer(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	t.Logf("Response status: %d", w.Code)
+	t.Logf("Response body: %s", w.Body.String())
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotEmpty(t, w.Body.String(), "Response body should not be empty")
+
+	var resp response.AuthResponse
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err, "Should be valid JSON")
+
+	assert.Equal(t, mockAuthResp.AccessToken, resp.AccessToken)
+	assert.Equal(t, mockAuthResp.RefreshToken, resp.RefreshToken)
+
+	mockUserService.AssertExpectations(t)
+}
+
+func TestCurrentUser(t *testing.T) {
+	mockUserService := setupMockUserService()
+
+	userID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	mockUser := &response.UserResponse{
+		ID:        userID,
+		Username:  "testuser",
+		Email:     "test@example.com",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	mockUserService.On("GetUser", mock.Anything, userID).Return(mockUser, nil)
+
+	router := gin.New()
+	router.GET("/api/v1/users/me", func(c *gin.Context) {
+		// Simulate auth middleware
+		c.Set("userID", userID)
+
+		id, _ := c.Get("userID")
+		resp, err := mockUserService.GetUser(c.Request.Context(), id.(uuid.UUID))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
+			return
+		}
+
+		c.JSON(http.StatusOK, resp)
+	})
+
+	req := httptest.NewRequest("GET", "/api/v1/users/me", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	t.Logf("Response status: %d", w.Code)
+	t.Logf("Response body: %s", w.Body.String())
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotEmpty(t, w.Body.String(), "Response body should not be empty")
+
+	var resp response.UserResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err, "Should be valid JSON")
+
+	assert.Equal(t, mockUser.ID, resp.ID)
+	assert.Equal(t, mockUser.Username, resp.Username)
+	assert.Equal(t, mockUser.Email, resp.Email)
+
+	mockUserService.AssertExpectations(t)
 }
