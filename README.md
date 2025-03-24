@@ -199,8 +199,12 @@ logging:
 
 ## Deployment
 
-For detailed deployment instructions, please refer to [README_DEPLOY.md](README_DEPLOY.md).
+For detailed deployment instructions, please refer to [README_DEPLOY.md](docs/README_DEPLOY.md).
 
 ## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+## Weaknesses
+
+Identified Weaknesses and Improvement Opportunities: [Code Analysis: TryTraGo Dictionary Server](docs/WEAKNESSES.md).
