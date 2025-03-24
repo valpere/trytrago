@@ -1,12 +1,12 @@
-openapi: 3.0.3
+openapi: 3.0.0
 info:
   title: TryTraGo Dictionary API
   description: |
-    API for the TryTraGo multilanguage dictionary server, providing comprehensive
-    dictionary entries, meanings, translations, and social features.
+    TryTraGo is a high-performance multilanguage dictionary server designed to support approximately 
+    60 million dictionary entries with robust API functionality, social features, and multi-database support.
   version: 1.0.0
   contact:
-    name: TryTraGo Team
+    name: TryTraGo Support
     email: support@trytrago.com
     url: https://github.com/valpere/trytrago
   license:
@@ -14,146 +14,55 @@ info:
     url: https://www.apache.org/licenses/LICENSE-2.0.html
 
 servers:
-  - url: https://api.trytrago.com/api/v1
-    description: Production server
-  - url: https://staging.trytrago.com/api/v1
-    description: Staging server
   - url: http://localhost:8080/api/v1
     description: Local development server
+  - url: https://api.trytrago.com/api/v1
+    description: Production API server
 
 tags:
+  - name: Entries
+    description: Dictionary entries operations
+  - name: Meanings
+    description: Meanings operations for dictionary entries
+  - name: Translations
+    description: Translation operations for meanings
   - name: Authentication
     description: User authentication operations
-  - name: Entries
-    description: Dictionary entry operations
-  - name: Meanings
-    description: Entry meaning operations
-  - name: Translations
-    description: Translation operations
-  - name: Social
-    description: Comments and likes operations
-  - name: Users
-    description: User management operations
+  - name: User
+    description: User profile and content operations
   - name: Admin
     description: Administrative operations
 
 paths:
-  /auth/register:
-    post:
-      tags:
-        - Authentication
-      summary: Register a new user
-      description: Creates a new user account
-      operationId: registerUser
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateUserRequest'
-      responses:
-        '201':
-          description: User created successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '409':
-          description: Username or email already exists
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Username or email already exists
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  /auth/login:
-    post:
-      tags:
-        - Authentication
-      summary: Login
-      description: Authenticate a user and get JWT tokens
-      operationId: loginUser
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AuthRequest'
-      responses:
-        '200':
-          description: Authentication successful
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          description: Invalid credentials
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Invalid credentials
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  /auth/refresh:
-    post:
-      tags:
-        - Authentication
-      summary: Refresh token
-      description: Get a new access token using a refresh token
-      operationId: refreshToken
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RefreshTokenRequest'
-      responses:
-        '200':
-          description: Token refreshed successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          description: Invalid refresh token
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Invalid refresh token
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
   /entries:
     get:
+      summary: List dictionary entries
+      description: Returns a paginated list of dictionary entries
       tags:
         - Entries
-      summary: List entries
-      description: Retrieve a list of dictionary entries with optional filtering
-      operationId: listEntries
       parameters:
-        - $ref: '#/components/parameters/LimitParam'
-        - $ref: '#/components/parameters/OffsetParam'
+        - name: limit
+          in: query
+          description: Maximum number of entries to return
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          description: Number of entries to skip
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
         - name: sort_by
           in: query
           description: Field to sort by
           schema:
             type: string
             enum: [word, created_at, updated_at]
-            default: updated_at
+            default: word
         - name: sort_desc
           in: query
           description: Sort in descending order
@@ -162,7 +71,7 @@ paths:
             default: false
         - name: word_filter
           in: query
-          description: Filter entries by word (partial match)
+          description: Filter entries by word (case-insensitive partial match)
           schema:
             type: string
         - name: type
@@ -173,7 +82,7 @@ paths:
             enum: [WORD, COMPOUND_WORD, PHRASE]
       responses:
         '200':
-          description: List of entries
+          description: Successful operation
           content:
             application/json:
               schema:
@@ -182,13 +91,12 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
+    
     post:
+      summary: Create a new dictionary entry
+      description: Creates a new dictionary entry
       tags:
         - Entries
-      summary: Create entry
-      description: Create a new dictionary entry
-      operationId: createEntry
       security:
         - BearerAuth: []
       requestBody:
@@ -213,30 +121,27 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Entry already exists
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
   /entries/{id}:
     get:
+      summary: Get a dictionary entry by ID
+      description: Returns a dictionary entry by its UUID
       tags:
         - Entries
-      summary: Get entry
-      description: Retrieve a specific dictionary entry by ID
-      operationId: getEntry
       parameters:
         - name: id
           in: path
-          description: Entry ID
+          description: Entry UUID
           required: true
           schema:
             type: string
             format: uuid
       responses:
         '200':
-          description: Entry found
+          description: Successful operation
           content:
             application/json:
               schema:
@@ -247,19 +152,18 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
+    
     put:
+      summary: Update a dictionary entry
+      description: Updates an existing dictionary entry
       tags:
         - Entries
-      summary: Update entry
-      description: Update an existing dictionary entry
-      operationId: updateEntry
       security:
         - BearerAuth: []
       parameters:
         - name: id
           in: path
-          description: Entry ID
+          description: Entry UUID
           required: true
           schema:
             type: string
@@ -283,21 +187,26 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: Entry with the same word already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
+    
     delete:
+      summary: Delete a dictionary entry
+      description: Deletes an existing dictionary entry
       tags:
         - Entries
-      summary: Delete entry
-      description: Delete a dictionary entry
-      operationId: deleteEntry
       security:
         - BearerAuth: []
       parameters:
         - name: id
           in: path
-          description: Entry ID
+          description: Entry UUID
           required: true
           schema:
             type: string
@@ -314,24 +223,23 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /entries/{entryId}/meanings:
+  /entries/{id}/meanings:
     get:
+      summary: List meanings for an entry
+      description: Returns all meanings for a dictionary entry
       tags:
         - Meanings
-      summary: List meanings
-      description: Retrieve the meanings of a specific entry
-      operationId: listMeanings
       parameters:
-        - name: entryId
+        - name: id
           in: path
-          description: Entry ID
+          description: Entry UUID
           required: true
           schema:
             type: string
             format: uuid
       responses:
         '200':
-          description: List of meanings
+          description: Successful operation
           content:
             application/json:
               schema:
@@ -343,69 +251,30 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-    post:
-      tags:
-        - Meanings
-      summary: Add meaning
-      description: Add a new meaning to an entry
-      operationId: addMeaning
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: entryId
-          in: path
-          description: Entry ID
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateMeaningRequest'
-      responses:
-        '201':
-          description: Meaning added successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MeaningResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  /entries/{entryId}/meanings/{meaningId}:
+  /meaning-details/{entryId}/{meaningId}:
     get:
+      summary: Get a specific meaning
+      description: Returns a specific meaning for a dictionary entry
       tags:
         - Meanings
-      summary: Get meaning
-      description: Retrieve a specific meaning
-      operationId: getMeaning
       parameters:
         - name: entryId
           in: path
-          description: Entry ID
+          description: Entry UUID
           required: true
           schema:
             type: string
             format: uuid
         - name: meaningId
           in: path
-          description: Meaning ID
+          description: Meaning UUID
           required: true
           schema:
             type: string
             format: uuid
       responses:
         '200':
-          description: Meaning found
+          description: Successful operation
           content:
             application/json:
               schema:
@@ -416,26 +285,25 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
+    
     put:
+      summary: Update a meaning
+      description: Updates an existing meaning for a dictionary entry
       tags:
         - Meanings
-      summary: Update meaning
-      description: Update an existing meaning
-      operationId: updateMeaning
       security:
         - BearerAuth: []
       parameters:
         - name: entryId
           in: path
-          description: Entry ID
+          description: Entry UUID
           required: true
           schema:
             type: string
             format: uuid
         - name: meaningId
           in: path
-          description: Meaning ID
+          description: Meaning UUID
           required: true
           schema:
             type: string
@@ -461,26 +329,25 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
+    
     delete:
+      summary: Delete a meaning
+      description: Deletes an existing meaning for a dictionary entry
       tags:
         - Meanings
-      summary: Delete meaning
-      description: Delete a meaning from an entry
-      operationId: deleteMeaning
       security:
         - BearerAuth: []
       parameters:
         - name: entryId
           in: path
-          description: Entry ID
+          description: Entry UUID
           required: true
           schema:
             type: string
             format: uuid
         - name: meaningId
           in: path
-          description: Meaning ID
+          description: Meaning UUID
           required: true
           schema:
             type: string
@@ -497,26 +364,18 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /entries/{entryId}/meanings/{meaningId}/comments:
+  /meaning-details/{entryId}:
     post:
+      summary: Add a meaning to an entry
+      description: Adds a new meaning to a dictionary entry
       tags:
-        - Social
-      summary: Add comment to meaning
-      description: Add a comment to a meaning
-      operationId: addMeaningComment
+        - Meanings
       security:
         - BearerAuth: []
       parameters:
         - name: entryId
           in: path
-          description: Entry ID
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: meaningId
-          in: path
-          description: Meaning ID
+          description: Entry UUID
           required: true
           schema:
             type: string
@@ -526,14 +385,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateCommentRequest'
+              $ref: '#/components/schemas/CreateMeaningRequest'
       responses:
         '201':
-          description: Comment added successfully
+          description: Meaning created successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CommentResponse'
+                $ref: '#/components/schemas/MeaningResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -543,73 +402,37 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /entries/{entryId}/meanings/{meaningId}/likes:
-    post:
-      tags:
-        - Social
-      summary: Toggle like on meaning
-      description: Toggle a like on a meaning (add if not present, remove if present)
-      operationId: toggleMeaningLike
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: entryId
-          in: path
-          description: Entry ID
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: meaningId
-          in: path
-          description: Meaning ID
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '204':
-          description: Like toggled successfully
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  /entries/{entryId}/meanings/{meaningId}/translations:
+  /meaning-details/{entryId}/{meaningId}/translations:
     get:
+      summary: List translations for a meaning
+      description: Returns all translations for a specific meaning
       tags:
         - Translations
-      summary: List translations
-      description: Retrieve translations for a specific meaning
-      operationId: listTranslations
       parameters:
         - name: entryId
           in: path
-          description: Entry ID
+          description: Entry UUID
           required: true
           schema:
             type: string
             format: uuid
         - name: meaningId
           in: path
-          description: Meaning ID
+          description: Meaning UUID
           required: true
           schema:
             type: string
             format: uuid
-        - name: language_id
+        - name: language
           in: query
-          description: Filter translations by language (ISO 639-1 code)
+          description: Filter translations by language code
           schema:
             type: string
-            pattern: '^[a-z]{2,5}
+            minLength: 2
+            maxLength: 5
       responses:
         '200':
-          description: List of translations
+          description: Successful operation
           content:
             application/json:
               schema:
@@ -620,26 +443,25 @@ paths:
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
+    
     post:
+      summary: Add a translation to a meaning
+      description: Adds a new translation to a specific meaning
       tags:
         - Translations
-      summary: Create translation
-      description: Add a translation to a meaning
-      operationId: createTranslation
       security:
         - BearerAuth: []
       parameters:
         - name: entryId
           in: path
-          description: Entry ID
+          description: Entry UUID
           required: true
           schema:
             type: string
             format: uuid
         - name: meaningId
           in: path
-          description: Meaning ID
+          description: Meaning UUID
           required: true
           schema:
             type: string
@@ -666,48 +488,582 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-components/responses/NotFound'
+  /auth/register:
+    post:
+      summary: Register a new user
+      description: Creates a new user account
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Username or email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-    delete:
+  /auth/login:
+    post:
+      summary: User login
+      description: Authenticates a user and returns a JWT token
       tags:
-        - Translations
-      summary: Delete translation
-      description: Delete a translation
-      operationId: deleteTranslation
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: entryId
-          in: path
-          description: Entry ID
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: meaningId
-          in: path
-          description: Meaning ID
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: translationId
-          in: path
-          description: Translation ID
-          required: true
-          schema:
-            type: string
-            format: uuid
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequest'
       responses:
-        '204':
-          description: Translation deleted successfully
+        '200':
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/refresh:
+    post:
+      summary: Refresh authentication token
+      description: Refreshes an authentication token using a refresh token
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /users/me:
+    get:
+      summary: Get current user
+      description: Returns the current authenticated user's profile
+      tags:
+        - User
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
+    
+    put:
+      summary: Update current user
+      description: Updates the current authenticated user's profile
+      tags:
+        - User
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Username or email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    
+    delete:
+      summary: Delete current user
+      description: Deletes the current authenticated user's account
+      tags:
+        - User
+      security:
+        - BearerAuth: []
+      responses:
+        '204':
+          description: User deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    CreateEntryRequest:
+      type: object
+      required:
+        - word
+        - type
+      properties:
+        word:
+          type: string
+          minLength: 1
+          example: "example"
+        type:
+          type: string
+          enum: [WORD, COMPOUND_WORD, PHRASE]
+          example: "WORD"
+        pronunciation:
+          type: string
+          example: "ɪɡˈzæmpəl"
+
+    UpdateEntryRequest:
+      type: object
+      properties:
+        word:
+          type: string
+          example: "example"
+        type:
+          type: string
+          enum: [WORD, COMPOUND_WORD, PHRASE]
+          example: "WORD"
+        pronunciation:
+          type: string
+          example: "ɪɡˈzæmpəl"
+
+    EntryResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        word:
+          type: string
+        type:
+          type: string
+          enum: [WORD, COMPOUND_WORD, PHRASE]
+        pronunciation:
+          type: string
+        meanings:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeaningResponse'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    EntryListResponse:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntryResponse'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    CreateMeaningRequest:
+      type: object
+      required:
+        - part_of_speech_id
+        - description
+      properties:
+        part_of_speech_id:
+          type: string
+          format: uuid
+        description:
+          type: string
+        examples:
+          type: array
+          items:
+            type: string
+
+    UpdateMeaningRequest:
+      type: object
+      properties:
+        part_of_speech_id:
+          type: string
+          format: uuid
+        description:
+          type: string
+        examples:
+          type: array
+          items:
+            type: string
+
+    MeaningResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        entry_id:
+          type: string
+          format: uuid
+        part_of_speech:
+          type: string
+        description:
+          type: string
+        examples:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExampleResponse'
+        translations:
+          type: array
+          items:
+            $ref: '#/components/schemas/TranslationResponse'
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommentResponse'
+        likes_count:
+          type: integer
+        current_user_liked:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    MeaningListResponse:
+      type: object
+      properties:
+        meanings:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeaningResponse'
+        total:
+          type: integer
+
+    ExampleResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        text:
+          type: string
+        context:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateTranslationRequest:
+      type: object
+      required:
+        - language_id
+        - text
+      properties:
+        language_id:
+          type: string
+          minLength: 2
+          maxLength: 5
+          example: "fr"
+        text:
+          type: string
+          example: "exemple"
+
+    UpdateTranslationRequest:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          example: "exemple"
+
+    TranslationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        meaning_id:
+          type: string
+          format: uuid
+        language_id:
+          type: string
+        text:
+          type: string
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommentResponse'
+        likes_count:
+          type: integer
+        current_user_liked:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        created_by:
+          $ref: '#/components/schemas/UserSummary'
+
+    TranslationListResponse:
+      type: object
+      properties:
+        translations:
+          type: array
+          items:
+            $ref: '#/components/schemas/TranslationResponse'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    CommentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        content:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserSummary'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateCommentRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    UserSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        avatar:
+          type: string
+
+    CreateUserRequest:
+      type: object
+      required:
+        - username
+        - email
+        - password
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+          format: password
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+          format: password
+        avatar:
+          type: string
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+        avatar:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AuthRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+
+    RefreshTokenRequest:
+      type: object
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+
+    AuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+          description: Expiration time in seconds
+        user:
+          $ref: '#/components/schemas/UserResponse'
+
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: integer
+          description: HTTP status code
+        error:
+          type: string
+          description: Error type
+        message:
+          type: string
+          description: User-friendly error message
+        details:
+          type: object
+          additionalProperties: true
+          description: Optional error details
+        request_id:
+          type: string
+          description: Request ID for tracing
+        timestamp:
+          type: string
+          format: date-time
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

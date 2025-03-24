@@ -32,4 +32,4 @@ done
 
 echo "Development ${DBMS} environment is ready!"
 echo "Run 'make run' to start the application."
-echo "When finished, run 'scripts/stop-dev.sh' to stop the development environment."
+echo "When finished, run 'scripts/debug_ms-stop.sh' to stop the development environment."

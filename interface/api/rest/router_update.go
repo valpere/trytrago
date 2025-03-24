@@ -110,14 +110,11 @@ func NewRouterWithErrorHandling(
 			entries.GET("", entryHandler.ListEntries)
 			entries.GET("/:id", entryHandler.GetEntry)
 			entries.GET("/:id/meanings", entryHandler.ListMeanings)
-
-			// Meanings
-			meanings := entries.Group("/:entryId/meanings")
-			{
-				meanings.GET("/:meaningId", entryHandler.GetMeaning)
-				meanings.GET("/:meaningId/translations", translationHandler.ListTranslations)
-			}
 		}
+
+		// Define routes directly with full paths to avoid wildcard conflicts
+		router.GET("/api/v1/entries/:entryId/meanings/:meaningId", entryHandler.GetMeaning)
+		router.GET("/api/v1/entries/:entryId/meanings/:meaningId/translations", translationHandler.ListTranslations)
 
 		// Protected routes - require authentication
 		protected := v1.Group("")
@@ -143,27 +140,21 @@ func NewRouterWithErrorHandling(
 				protectedEntries.POST("", entryHandler.CreateEntry)
 				protectedEntries.PUT("/:id", entryHandler.UpdateEntry)
 				protectedEntries.DELETE("/:id", entryHandler.DeleteEntry)
-
-				// Meaning management
-				protectedMeanings := protectedEntries.Group("/:entryId/meanings")
-				{
-					protectedMeanings.POST("", entryHandler.AddMeaning)
-					protectedMeanings.PUT("/:meaningId", entryHandler.UpdateMeaning)
-					protectedMeanings.DELETE("/:meaningId", entryHandler.DeleteMeaning)
-					protectedMeanings.POST("/:meaningId/comments", entryHandler.AddMeaningComment)
-					protectedMeanings.POST("/:meaningId/likes", entryHandler.ToggleMeaningLike)
-
-					// Translation management
-					protectedTranslations := protectedMeanings.Group("/:meaningId/translations")
-					{
-						protectedTranslations.POST("", translationHandler.CreateTranslation)
-						protectedTranslations.PUT("/:translationId", translationHandler.UpdateTranslation)
-						protectedTranslations.DELETE("/:translationId", translationHandler.DeleteTranslation)
-						protectedTranslations.POST("/:translationId/comments", translationHandler.AddTranslationComment)
-						protectedTranslations.POST("/:translationId/likes", translationHandler.ToggleTranslationLike)
-					}
-				}
 			}
+
+			// Define protected meaning and translation routes directly to avoid conflicts
+			router.POST("/api/v1/entries/:entryId/meanings", authMiddleware.RequireAuth(), entryHandler.AddMeaning)
+			router.PUT("/api/v1/entries/:entryId/meanings/:meaningId", authMiddleware.RequireAuth(), entryHandler.UpdateMeaning)
+			router.DELETE("/api/v1/entries/:entryId/meanings/:meaningId", authMiddleware.RequireAuth(), entryHandler.DeleteMeaning)
+			router.POST("/api/v1/entries/:entryId/meanings/:meaningId/comments", authMiddleware.RequireAuth(), entryHandler.AddMeaningComment)
+			router.POST("/api/v1/entries/:entryId/meanings/:meaningId/likes", authMiddleware.RequireAuth(), entryHandler.ToggleMeaningLike)
+
+			// Translation management
+			router.POST("/api/v1/entries/:entryId/meanings/:meaningId/translations", authMiddleware.RequireAuth(), translationHandler.CreateTranslation)
+			router.PUT("/api/v1/entries/:entryId/meanings/:meaningId/translations/:translationId", authMiddleware.RequireAuth(), translationHandler.UpdateTranslation)
+			router.DELETE("/api/v1/entries/:entryId/meanings/:meaningId/translations/:translationId", authMiddleware.RequireAuth(), translationHandler.DeleteTranslation)
+			router.POST("/api/v1/entries/:entryId/meanings/:meaningId/translations/:translationId/comments", authMiddleware.RequireAuth(), translationHandler.AddTranslationComment)
+			router.POST("/api/v1/entries/:entryId/meanings/:meaningId/translations/:translationId/likes", authMiddleware.RequireAuth(), translationHandler.ToggleTranslationLike)
 		}
 
 		// Admin routes

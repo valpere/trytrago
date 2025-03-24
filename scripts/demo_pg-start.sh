@@ -15,6 +15,7 @@ echo "Starting TryTraGo demo environment..."
 
 # Start the entire stack with Docker Compose
 echo "Starting services..."
+cd "$PROJECT_ROOT"
 docker compose -f "$PROJECT_ROOT/docker/docker-compose-demo.yml" up -d
 
 # Check if the app is healthy
@@ -34,4 +35,4 @@ echo "Demo environment is running!"
 echo "Access the API at: http://localhost:8080"
 echo "Access Adminer at: http://localhost:8081"
 echo ""
-echo "When finished, run 'scripts/stop-demo.sh' to stop the demo environment."
+echo "When finished, run 'scripts/demo_pg-stop.sh' to stop the demo environment."
