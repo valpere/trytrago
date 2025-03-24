@@ -95,7 +95,7 @@ make docker-compose-up
 
 TryTraGo provides a RESTful API for all dictionary operations. You can view the API documentation at:
 
-- Swagger UI: `http://localhost:8080/swagger-ui/`
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
 - OpenAPI Specification: `http://localhost:8080/v3/api-docs`
 
 ### Authentication
@@ -191,11 +191,15 @@ database:
   name: trytrago
   user: postgres
   password: postgres
-  
+
 logging:
   level: info
   format: json
 ```
+
+## Deployment
+
+For detailed deployment instructions, please refer to [README_DEPLOY.md](README_DEPLOY.md).
 
 ## License
 

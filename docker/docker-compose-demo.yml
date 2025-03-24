@@ -2,8 +2,8 @@ services:
   # TryTraGo Application
   trytrago:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
       args:
         VERSION: demo
         COMMIT_SHA: ${COMMIT_SHA:-local}
@@ -11,8 +11,8 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config.yaml:/etc/trytrago/config.yaml
-      - ./migrations:/etc/trytrago/migrations
+      - ../config.yaml:/etc/trytrago/config.yaml
+      - ../migrations:/etc/trytrago/migrations
       - trytrago-data:/data/trytrago
     environment:
       - TRYTRAGO_DATABASE_HOST=postgres

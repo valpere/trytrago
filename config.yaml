@@ -1,114 +1,42 @@
-# TryTraGo Configuration
-
 # Server configuration
 server:
-  # Server port
   port: 8080
-  # Request timeout
   timeout: 30s
-  # Read timeout
   read_timeout: 15s
-  # Write timeout
   write_timeout: 15s
-  # CORS allowed origins (defaults to "*" in development)
-  allowed_origins: []
-  # CORS allowed methods (defaults to standard methods)
-  allowed_methods: []
-  # Maximum request size in bytes (default: 10MB)
-  max_request_size: 10485760
-  # TLS configuration (optional)
-  tls:
-    enabled: false
-    cert_file: ""
-    key_file: ""
-  # Security headers configuration
-  security:
-    # Content Security Policy
-    csp_policy: "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
-    # Referrer Policy
-    referrer_policy: "strict-origin-when-cross-origin"
-    # X-Frame-Options header
-    x_frame_options: "DENY"
-    # X-XSS-Protection header
-    xss_protection: true
-    # X-Content-Type-Options header
-    content_type_nosniff: true
-    # HTTP Strict Transport Security max age in seconds (31536000 = 1 year)
-    hsts_max_age: 31536000
-    # Include subdomains in HSTS
-    hsts_include_subdomains: true
 
 # Database configuration
 database:
-  # Database type: postgres, mysql, sqlite
   type: postgres
-  # Database host
   host: localhost
-  # Database port
   port: 5432
-  # Database user
   user: postgres
-  # Database password
   password: postgres
-  # Database name
-  name: trytrago
-  # SSL mode for PostgreSQL
-  sslmode: disable
-  # Connection pool settings
-  max_open_conns: 20
+  name: trytrago_dev
+  max_open_conns: 50
   max_idle_conns: 10
   conn_lifetime: 5m
 
 # Logging configuration
 logging:
-  # Logging level: debug, info, warn, error
-  level: info
-  # Logging format: json, console
-  format: console
-  # Log output: stdout, stderr, file
+  level: debug  # debug, info, warn, error
+  format: console  # json or console
   output: stdout
-  # File path for file logging (if enabled)
   file_path: ""
-  # Enable file logging
-  enable_file: false
 
 # Authentication configuration
 auth:
-  # JWT secret key
-  jwt_secret: your-secret-key-change-this-in-production
-  # Access token duration
+  jwt_secret: your-development-secret-key
   access_token_duration: 1h
-  # Refresh token duration
-  refresh_token_duration: 168h # 7 days
+  refresh_token_duration: 168h  # 7 days
 
 # Cache configuration
 cache:
-  # Enable caching
-  enabled: true
-  # Cache type: redis, memory
   type: redis
-  # Redis host
-  host: localhost
-  # Redis port
-  port: 6379
-  # Address (optional, combined host:port)
   address: localhost:6379
-  # Redis password
   password: ""
-  # Redis database
   db: 0
-  # Default TTL
   ttl: 10m
-  # Cache TTLs for specific data types
-  entry_ttl: 15m
-  list_ttl: 5m
-  social_ttl: 2m
-  translation_ttl: 15m
-  # Key prefix (optional, defaults to "trytrago:<environment>")
-  key_prefix: ""
 
-# Environment: development, production
+# Environment
 environment: development
-
-# Version information (populated at build time)
-version: dev

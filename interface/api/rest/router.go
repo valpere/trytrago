@@ -1,5 +1,3 @@
-// interface/api/rest/router.go (updated)
-
 package rest
 
 import (
@@ -65,89 +63,84 @@ func NewRouter(
 
 	// API v1 routes
 	v1 := router.Group("/api/v1")
+
+	// Public routes
+	auth := v1.Group("/auth")
 	{
-		// Public routes
-		auth := v1.Group("/auth")
-		{
-			auth.POST("/login", userHandler.Login)
-			auth.POST("/refresh", userHandler.RefreshToken)
-			auth.POST("/register", userHandler.CreateUser)
-		}
+		auth.POST("/login", userHandler.Login)
+		auth.POST("/refresh", userHandler.RefreshToken)
+		auth.POST("/register", userHandler.CreateUser)
+	}
 
-		// Public dictionary routes
-		entries := v1.Group("/entries")
-		{
-			entries.GET("", entryHandler.ListEntries)
-			entries.GET("/:id", entryHandler.GetEntry)
-			entries.GET("/:id/meanings", entryHandler.ListMeanings)
+	// Public dictionary routes - basic entry endpoints
+	entries := v1.Group("/entries")
+	{
+		entries.GET("", entryHandler.ListEntries)
+		entries.GET("/:id", entryHandler.GetEntry)
+		entries.GET("/:id/meanings", entryHandler.ListMeanings)
+	}
 
-			// Meanings
-			meanings := entries.Group("/:entryId/meanings")
-			{
-				meanings.GET("/:meaningId", entryHandler.GetMeaning)
-				meanings.GET("/:meaningId/translations", translationHandler.ListTranslations)
-			}
-		}
+	// Separate routes for meanings with different param name pattern
+	meanings := v1.Group("/meaning-details")
+	{
+		meanings.GET("/:entryId/:meaningId", entryHandler.GetMeaning)
+		meanings.GET("/:entryId/:meaningId/translations", translationHandler.ListTranslations)
+	}
 
-		// Protected routes - require authentication
-		protected := v1.Group("")
-		protected.Use(authMiddleware.RequireAuth())
-		{
-			// User management
-			users := protected.Group("/users")
-			{
-				users.GET("/me", userHandler.GetCurrentUser)
-				users.PUT("/me", userHandler.UpdateCurrentUser)
-				users.DELETE("/me", userHandler.DeleteCurrentUser)
+	// Protected routes - require authentication
+	protected := v1.Group("")
+	protected.Use(authMiddleware.RequireAuth())
 
-				// User content
-				users.GET("/me/entries", userHandler.ListUserEntries)
-				users.GET("/me/translations", userHandler.ListUserTranslations)
-				users.GET("/me/comments", userHandler.ListUserComments)
-				users.GET("/me/likes", userHandler.ListUserLikes)
-			}
+	// User management routes
+	users := protected.Group("/users")
+	{
+		users.GET("/me", userHandler.GetCurrentUser)
+		users.PUT("/me", userHandler.UpdateCurrentUser)
+		users.DELETE("/me", userHandler.DeleteCurrentUser)
 
-			// Entry management
-			protectedEntries := protected.Group("/entries")
-			{
-				protectedEntries.POST("", entryHandler.CreateEntry)
-				protectedEntries.PUT("/:id", entryHandler.UpdateEntry)
-				protectedEntries.DELETE("/:id", entryHandler.DeleteEntry)
+		// User content
+		users.GET("/me/entries", userHandler.ListUserEntries)
+		users.GET("/me/translations", userHandler.ListUserTranslations)
+		users.GET("/me/comments", userHandler.ListUserComments)
+		users.GET("/me/likes", userHandler.ListUserLikes)
+	}
 
-				// Meaning management
-				protectedMeanings := protectedEntries.Group("/:entryId/meanings")
-				{
-					protectedMeanings.POST("", entryHandler.AddMeaning)
-					protectedMeanings.PUT("/:meaningId", entryHandler.UpdateMeaning)
-					protectedMeanings.DELETE("/:meaningId", entryHandler.DeleteMeaning)
-					protectedMeanings.POST("/:meaningId/comments", entryHandler.AddMeaningComment)
-					protectedMeanings.POST("/:meaningId/likes", entryHandler.ToggleMeaningLike)
+	// Protected entry management
+	protectedEntries := protected.Group("/entries")
+	{
+		protectedEntries.POST("", entryHandler.CreateEntry)
+		protectedEntries.PUT("/:id", entryHandler.UpdateEntry)
+		protectedEntries.DELETE("/:id", entryHandler.DeleteEntry)
+	}
 
-					// Translation management
-					protectedTranslations := protectedMeanings.Group("/:meaningId/translations")
-					{
-						protectedTranslations.POST("", translationHandler.CreateTranslation)
-						protectedTranslations.PUT("/:translationId", translationHandler.UpdateTranslation)
-						protectedTranslations.DELETE("/:translationId", translationHandler.DeleteTranslation)
-						protectedTranslations.POST("/:translationId/comments", translationHandler.AddTranslationComment)
-						protectedTranslations.POST("/:translationId/likes", translationHandler.ToggleTranslationLike)
-					}
-				}
-			}
-		}
+	// Protected meaning management with different route pattern
+	protectedMeanings := protected.Group("/meaning-details")
+	{
+		protectedMeanings.POST("/:entryId", entryHandler.AddMeaning)
+		protectedMeanings.PUT("/:entryId/:meaningId", entryHandler.UpdateMeaning)
+		protectedMeanings.DELETE("/:entryId/:meaningId", entryHandler.DeleteMeaning)
+		protectedMeanings.POST("/:entryId/:meaningId/comments", entryHandler.AddMeaningComment)
+		protectedMeanings.POST("/:entryId/:meaningId/likes", entryHandler.ToggleMeaningLike)
 
-		// Admin routes
-		admin := v1.Group("/admin")
-		admin.Use(authMiddleware.RequireAdmin())
-		{
-			// Admin routes go here
-			admin.GET("/stats", func(c *gin.Context) {
-				c.JSON(200, gin.H{
-					"status":  "ok",
-					"message": "Admin stats endpoint",
-				})
+		// Translation routes
+		protectedMeanings.POST("/:entryId/:meaningId/translations", translationHandler.CreateTranslation)
+		protectedMeanings.PUT("/:entryId/:meaningId/translations/:translationId", translationHandler.UpdateTranslation)
+		protectedMeanings.DELETE("/:entryId/:meaningId/translations/:translationId", translationHandler.DeleteTranslation)
+		protectedMeanings.POST("/:entryId/:meaningId/translations/:translationId/comments", translationHandler.AddTranslationComment)
+		protectedMeanings.POST("/:entryId/:meaningId/translations/:translationId/likes", translationHandler.ToggleTranslationLike)
+	}
+
+	// Admin routes
+	admin := v1.Group("/admin")
+	admin.Use(authMiddleware.RequireAdmin())
+	{
+		// Admin routes go here
+		admin.GET("/stats", func(c *gin.Context) {
+			c.JSON(200, gin.H{
+				"status":  "ok",
+				"message": "Admin stats endpoint",
 			})
-		}
+		})
 	}
 
 	return &ginRouter{

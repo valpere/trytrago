@@ -6,10 +6,6 @@ This document outlines the various deployment options for the TryTraGo multilang
 
 1. [System Requirements](#system-requirements)
 2. [Deployment Variants](#deployment-variants)
-   - [Docker-based Deployment](#docker-based-deployment)
-   - [Kubernetes Deployment](#kubernetes-deployment)
-   - [Manual Deployment](#manual-deployment)
-   - [Cloud-specific Deployments](#cloud-specific-deployments)
 3. [Configuration Management](#configuration-management)
 4. [Database Setup](#database-setup)
 5. [Migration Management](#migration-management)
@@ -266,58 +262,6 @@ sudo systemctl enable trytrago
 sudo systemctl start trytrago
 ```
 
-### Cloud-specific Deployments
-
-#### AWS Deployment
-
-1. **EC2 Option**:
-   - Launch EC2 instances for the application
-   - Use RDS for PostgreSQL/MySQL
-   - Use ElastiCache for Redis
-   - Set up an Application Load Balancer
-
-2. **ECS/Fargate Option**:
-   - Build and push Docker image to ECR
-   - Create ECS Task Definition
-   - Set up ECS Service with Fargate
-   - Configure Auto Scaling
-
-3. **EKS Option**:
-   - Set up Amazon EKS cluster
-   - Deploy using Kubernetes configurations
-   - Use managed services for database and Redis
-
-#### Google Cloud Platform
-
-1. **Compute Engine Option**:
-   - Similar to EC2 approach above
-
-2. **Google Kubernetes Engine (GKE)**:
-   - Create GKE cluster
-   - Deploy using Kubernetes configurations
-   - Use Cloud SQL for database
-   - Use Memorystore for Redis
-
-3. **Cloud Run Option**:
-   - Build and push Docker image to Container Registry
-   - Deploy container to Cloud Run
-   - Configure scaling and memory settings
-
-#### Azure Deployment
-
-1. **Azure Virtual Machines**:
-   - Similar to EC2 approach
-
-2. **Azure Kubernetes Service (AKS)**:
-   - Create AKS cluster
-   - Deploy using Kubernetes configurations
-   - Use Azure Database for PostgreSQL
-   - Use Azure Cache for Redis
-
-3. **Azure App Service**:
-   - Use Docker Container deployment option
-   - Configure scaling and resources
-
 ## Configuration Management
 
 ### Configuration File
@@ -492,12 +436,6 @@ For advanced monitoring, consider implementing Prometheus metrics:
 2. Configure Prometheus to scrape metrics from TryTraGo
 3. Create Grafana dashboards for visualization
 
-Key metrics to monitor:
-- HTTP request rate, latency, and error rate
-- Database connection pool usage
-- Memory and CPU usage
-- Authentication success/failure rate
-
 ## Backup and Restore
 
 ### Database Backup
@@ -536,17 +474,6 @@ For MySQL:
 gunzip -c trytrago_backup.sql.gz | mysql -u root -p trytrago
 ```
 
-### Automated Backups
-
-For production environments, set up automated daily backups:
-
-```bash
-# Add to crontab
-0 2 * * * /opt/trytrago/scripts/db-backup.sh
-```
-
-Consider setting up backup rotation and offsite backup storage for disaster recovery.
-
 ## Security Considerations
 
 ### Authentication
@@ -569,15 +496,6 @@ Consider setting up backup rotation and offsite backup storage for disaster reco
 - Restrict database user permissions
 - Enable SSL for database connections
 - Regularly update database credentials
-
-### Secrets Management
-
-For production deployments, use a secrets management solution:
-- Kubernetes Secrets
-- HashiCorp Vault
-- AWS Secrets Manager
-- Google Secret Manager
-- Azure Key Vault
 
 ## Scaling Strategies
 
@@ -630,7 +548,6 @@ Effectively use Redis caching:
 - [ ] Check logs for any errors or warnings
 - [ ] Test authentication flow
 - [ ] Test core API functionality
-- [ ] Verify metrics collection
 
 ### Post-deployment
 
@@ -639,4 +556,3 @@ Effectively use Redis caching:
 - [ ] Document deployment configuration
 - [ ] Update API documentation if needed
 - [ ] Set up alerts for critical metrics
-- [ ] Test scaling under load
