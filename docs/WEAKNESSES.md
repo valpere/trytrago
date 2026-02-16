@@ -11,6 +11,19 @@ TryTraGo appears to be a multilingual dictionary web service built in Go using t
 - **Command Layer**: CLI commands for different operations
 - **Docker Support**: For development, testing, and production environments
 
+## Improvements Applied
+
+### Fixed Issues
+
+1. **O(N) Child Entity Lookups** - RESOLVED
+   - Added direct repository methods: `GetMeaningByID`, `UpdateMeaning`, `DeleteMeaning`
+   - Added direct translation methods: `GetTranslationByID`, `UpdateTranslation`, `DeleteTranslation`
+   - Services now use O(1) lookups instead of listing entries
+
+2. **Dangerous Redis KEYS Command** - RESOLVED
+   - Replaced `KEYS` with `SCAN` iterator in cache invalidation
+   - Prevents blocking Redis in production
+
 ## Identified Weaknesses and Improvement Opportunities
 
 ### 1. Architectural Concerns

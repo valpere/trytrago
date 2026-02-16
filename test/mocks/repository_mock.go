@@ -61,6 +61,44 @@ func (m *MockRepository) FindTranslations(ctx context.Context, word string, lang
 	return args.Get(0).([]database.Translation), args.Error(1)
 }
 
+// Meaning operations
+func (m *MockRepository) GetMeaningByID(ctx context.Context, id uuid.UUID) (*database.Meaning, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*database.Meaning), args.Error(1)
+}
+
+func (m *MockRepository) UpdateMeaning(ctx context.Context, meaning *database.Meaning) error {
+	args := m.Called(ctx, meaning)
+	return args.Error(0)
+}
+
+func (m *MockRepository) DeleteMeaning(ctx context.Context, id uuid.UUID) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+// Translation operations (direct)
+func (m *MockRepository) GetTranslationByID(ctx context.Context, id uuid.UUID) (*database.Translation, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*database.Translation), args.Error(1)
+}
+
+func (m *MockRepository) UpdateTranslation(ctx context.Context, translation *database.Translation) error {
+	args := m.Called(ctx, translation)
+	return args.Error(0)
+}
+
+func (m *MockRepository) DeleteTranslation(ctx context.Context, id uuid.UUID) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
 // History operations
 func (m *MockRepository) RecordChange(ctx context.Context, change *database.ChangeHistory) error {
 	args := m.Called(ctx, change)

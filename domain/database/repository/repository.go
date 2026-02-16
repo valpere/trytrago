@@ -19,6 +19,16 @@ type Repository interface {
 	DeleteEntry(ctx context.Context, id uuid.UUID) error
 	ListEntries(ctx context.Context, params ListParams) ([]database.Entry, error)
 
+	// Meaning operations (direct lookups - avoids O(N) search)
+	GetMeaningByID(ctx context.Context, id uuid.UUID) (*database.Meaning, error)
+	UpdateMeaning(ctx context.Context, meaning *database.Meaning) error
+	DeleteMeaning(ctx context.Context, id uuid.UUID) error
+
+	// Translation operations (direct lookups - avoids O(N) search)
+	GetTranslationByID(ctx context.Context, id uuid.UUID) (*database.Translation, error)
+	UpdateTranslation(ctx context.Context, translation *database.Translation) error
+	DeleteTranslation(ctx context.Context, id uuid.UUID) error
+
 	// Translation operations
 	FindTranslations(ctx context.Context, word string, langID string) ([]database.Translation, error)
 
