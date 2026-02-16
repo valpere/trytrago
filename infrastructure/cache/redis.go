@@ -141,24 +141,32 @@ func (c *RedisCache) Exists(ctx context.Context, key string) (bool, error) {
 	return exists == 1, nil
 }
 
-// Invalidate removes all keys matching a pattern
+// Invalidate removes all keys matching a pattern using SCAN (safe for production)
 func (c *RedisCache) Invalidate(ctx context.Context, pattern string) error {
-	// Find all keys matching the pattern
-	keys, err := c.client.Keys(ctx, pattern).Result()
-	if err != nil {
-		c.logger.Error("error finding keys for invalidation",
-			logging.String("pattern", pattern),
-			logging.Error(err),
-		)
-		return fmt.Errorf("failed to find keys for invalidation: %w", err)
+	var cursor uint64
+	var keys []string
+
+	for {
+		var scanKeys []string
+		var err error
+		scanKeys, cursor, err = c.client.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			c.logger.Error("error scanning keys for invalidation",
+				logging.String("pattern", pattern),
+				logging.Error(err),
+			)
+			return fmt.Errorf("failed to scan keys for invalidation: %w", err)
+		}
+		keys = append(keys, scanKeys...)
+		if cursor == 0 {
+			break
+		}
 	}
 
-	// If there are no keys, return
 	if len(keys) == 0 {
 		return nil
 	}
 
-	// Delete all matching keys
 	if err := c.client.Del(ctx, keys...).Err(); err != nil {
 		c.logger.Error("error invalidating cache",
 			logging.String("pattern", pattern),

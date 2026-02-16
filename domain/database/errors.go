@@ -20,6 +20,12 @@ var (
 	// ErrEntryNotFound indicates that a dictionary entry wasn't found
 	ErrEntryNotFound = fmt.Errorf("%w: entry not found", ErrNotFound)
 
+	// ErrMeaningNotFound indicates that a meaning wasn't found
+	ErrMeaningNotFound = fmt.Errorf("%w: meaning not found", ErrNotFound)
+
+	// ErrTranslationNotFound indicates that a translation wasn't found
+	ErrTranslationNotFound = fmt.Errorf("%w: translation not found", ErrNotFound)
+
 	// ErrDuplicateEntry indicates that an entry with the same key already exists
 	ErrDuplicateEntry = errors.New("duplicate entry")
 

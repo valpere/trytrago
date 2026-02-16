@@ -258,64 +258,34 @@ func (s *entryService) AddMeaning(ctx context.Context, entryID uuid.UUID, req *r
 func (s *entryService) UpdateMeaning(ctx context.Context, id uuid.UUID, req *request.UpdateMeaningRequest) (*response.MeaningResponse, error) {
 	s.logger.Debug("updating meaning", logging.String("meaningID", id.String()))
 
-	// Find the meaning by ID
-	// Note: This approach searches across all entries to find the meaning
-	// In a real implementation, you would have a direct repository method to get a meaning by ID
-	params := repository.ListParams{
-		Limit: 100, // Reasonable limit to search through entries
-	}
-	entries, err := s.repo.ListEntries(ctx, params)
+	meaning, err := s.repo.GetMeaningByID(ctx, id)
 	if err != nil {
-		s.logger.Error("failed to list entries to find meaning",
+		if database.IsNotFoundError(err) {
+			return nil, database.ErrMeaningNotFound
+		}
+		s.logger.Error("failed to get meaning",
 			logging.Error(err),
 			logging.String("meaningID", id.String()),
 		)
-		return nil, fmt.Errorf("failed to find meaning: %w", err)
+		return nil, fmt.Errorf("failed to get meaning: %w", err)
 	}
 
-	// Find the meaning and its parent entry
-	var foundMeaning *database.Meaning
-	var foundEntry *database.Entry
-
-	for i := range entries {
-		entry := &entries[i]
-		for j := range entry.Meanings {
-			meaning := &entry.Meanings[j]
-			if meaning.ID == id {
-				foundMeaning = meaning
-				foundEntry = entry
-				break
-			}
-		}
-		if foundMeaning != nil {
-			break
-		}
-	}
-
-	if foundMeaning == nil {
-		return nil, database.ErrEntryNotFound
-	}
-
-	// Update meaning fields
 	if req.PartOfSpeechID != uuid.Nil {
-		foundMeaning.PartOfSpeechId = req.PartOfSpeechID
+		meaning.PartOfSpeechId = req.PartOfSpeechID
 	}
 
 	if req.Description != "" {
-		foundMeaning.Description = req.Description
+		meaning.Description = req.Description
 	}
 
-	foundMeaning.UpdatedAt = time.Now().UTC()
+	meaning.UpdatedAt = time.Now().UTC()
 
-	// Handle examples if provided
 	if len(req.Examples) > 0 {
-		// For simplicity, we'll replace all examples
-		// In a real implementation, you might want to handle more granular updates
-		foundMeaning.Examples = make([]database.Example, len(req.Examples))
+		meaning.Examples = make([]database.Example, len(req.Examples))
 		for i, exampleText := range req.Examples {
-			foundMeaning.Examples[i] = database.Example{
-				ID:        uuid.New(), // New example gets a new ID
-				MeaningID: foundMeaning.ID,
+			meaning.Examples[i] = database.Example{
+				ID:        uuid.New(),
+				MeaningID: meaning.ID,
 				Text:      exampleText,
 				CreatedAt: time.Now().UTC(),
 				UpdatedAt: time.Now().UTC(),
@@ -323,8 +293,7 @@ func (s *entryService) UpdateMeaning(ctx context.Context, id uuid.UUID, req *req
 		}
 	}
 
-	// Save the updated entry
-	if err := s.repo.UpdateEntry(ctx, foundEntry); err != nil {
+	if err := s.repo.UpdateMeaning(ctx, meaning); err != nil {
 		s.logger.Error("failed to update meaning",
 			logging.Error(err),
 			logging.String("meaningID", id.String()),
@@ -332,34 +301,7 @@ func (s *entryService) UpdateMeaning(ctx context.Context, id uuid.UUID, req *req
 		return nil, fmt.Errorf("failed to update meaning: %w", err)
 	}
 
-	// Retrieve the updated entry to ensure we have the latest data
-	updatedEntry, err := s.repo.GetEntryByID(ctx, foundEntry.ID)
-	if err != nil {
-		s.logger.Error("failed to retrieve updated entry",
-			logging.Error(err),
-			logging.String("entryID", foundEntry.ID.String()),
-		)
-		return nil, fmt.Errorf("failed to retrieve updated entry: %w", err)
-	}
-
-	// Find the updated meaning
-	var updatedMeaning *database.Meaning
-	for i := range updatedEntry.Meanings {
-		if updatedEntry.Meanings[i].ID == id {
-			updatedMeaning = &updatedEntry.Meanings[i]
-			break
-		}
-	}
-
-	if updatedMeaning == nil {
-		s.logger.Error("updated meaning not found in entry",
-			logging.String("meaningID", id.String()),
-		)
-		return nil, fmt.Errorf("updated meaning not found in entry")
-	}
-
-	// Map to response
-	resp := mapper.MeaningToResponse(updatedMeaning)
+	resp := mapper.MeaningToResponse(meaning)
 	return resp, nil
 }
 
@@ -367,53 +309,11 @@ func (s *entryService) UpdateMeaning(ctx context.Context, id uuid.UUID, req *req
 func (s *entryService) DeleteMeaning(ctx context.Context, id uuid.UUID) error {
 	s.logger.Debug("deleting meaning", logging.String("meaningID", id.String()))
 
-	// Find the meaning by ID
-	params := repository.ListParams{
-		Limit: 100, // Reasonable limit to search through entries
-	}
-	entries, err := s.repo.ListEntries(ctx, params)
-	if err != nil {
-		s.logger.Error("failed to list entries to find meaning",
-			logging.Error(err),
-			logging.String("meaningID", id.String()),
-		)
-		return fmt.Errorf("failed to find meaning: %w", err)
-	}
-
-	// Find the meaning and its parent entry
-	var foundMeaning *database.Meaning
-	var foundEntry *database.Entry
-	var meaningIndex int
-
-	for i := range entries {
-		entry := &entries[i]
-		for j := range entry.Meanings {
-			meaning := &entry.Meanings[j]
-			if meaning.ID == id {
-				foundMeaning = meaning
-				foundEntry = entry
-				meaningIndex = j
-				break
-			}
+	if err := s.repo.DeleteMeaning(ctx, id); err != nil {
+		if database.IsNotFoundError(err) {
+			return database.ErrMeaningNotFound
 		}
-		if foundMeaning != nil {
-			break
-		}
-	}
-
-	if foundMeaning == nil {
-		return database.ErrEntryNotFound
-	}
-
-	// Remove the meaning from the entry
-	foundEntry.Meanings = append(
-		foundEntry.Meanings[:meaningIndex],
-		foundEntry.Meanings[meaningIndex+1:]...,
-	)
-
-	// Save the updated entry
-	if err := s.repo.UpdateEntry(ctx, foundEntry); err != nil {
-		s.logger.Error("failed to update entry after deleting meaning",
+		s.logger.Error("failed to delete meaning",
 			logging.Error(err),
 			logging.String("meaningID", id.String()),
 		)
@@ -461,41 +361,18 @@ func (s *entryService) AddMeaningComment(ctx context.Context, meaningID uuid.UUI
 		logging.String("userID", req.UserID.String()),
 	)
 
-	// Find the meaning by ID
-	params := repository.ListParams{
-		Limit: 100, // Reasonable limit to search through entries
-	}
-	entries, err := s.repo.ListEntries(ctx, params)
+	_, err := s.repo.GetMeaningByID(ctx, meaningID)
 	if err != nil {
-		s.logger.Error("failed to list entries to find meaning",
+		if database.IsNotFoundError(err) {
+			return nil, database.ErrMeaningNotFound
+		}
+		s.logger.Error("failed to get meaning",
 			logging.Error(err),
 			logging.String("meaningID", meaningID.String()),
 		)
-		return nil, fmt.Errorf("failed to find meaning: %w", err)
+		return nil, fmt.Errorf("failed to get meaning: %w", err)
 	}
 
-	// Find the meaning
-	var foundMeaning *database.Meaning
-
-	for i := range entries {
-		entry := &entries[i]
-		for j := range entry.Meanings {
-			meaning := &entry.Meanings[j]
-			if meaning.ID == meaningID {
-				foundMeaning = meaning
-				break
-			}
-		}
-		if foundMeaning != nil {
-			break
-		}
-	}
-
-	if foundMeaning == nil {
-		return nil, database.ErrEntryNotFound
-	}
-
-	// Create a new comment
 	comment := model.Comment{
 		ID:         uuid.New(),
 		UserID:     req.UserID,
@@ -506,16 +383,11 @@ func (s *entryService) AddMeaningComment(ctx context.Context, meaningID uuid.UUI
 		UpdatedAt:  time.Now().UTC(),
 	}
 
-	// In a real implementation, you would save this comment to a dedicated comments table
-	// For now, we'll create a mock response
-
-	// Create user for the comment (would come from a user repository in a real implementation)
 	user := &model.User{
 		ID:       req.UserID,
-		Username: "user" + req.UserID.String()[0:8], // Mock username
+		Username: "user" + req.UserID.String()[0:8],
 	}
 
-	// Create response
 	resp := &response.CommentResponse{
 		ID:      comment.ID,
 		Content: comment.Content,
@@ -537,47 +409,18 @@ func (s *entryService) ToggleMeaningLike(ctx context.Context, meaningID uuid.UUI
 		logging.String("userID", userID.String()),
 	)
 
-	// Find the meaning by ID
-	params := repository.ListParams{
-		Limit: 100, // Reasonable limit to search through entries
-	}
-	entries, err := s.repo.ListEntries(ctx, params)
+	_, err := s.repo.GetMeaningByID(ctx, meaningID)
 	if err != nil {
-		s.logger.Error("failed to list entries to find meaning",
+		if database.IsNotFoundError(err) {
+			return database.ErrMeaningNotFound
+		}
+		s.logger.Error("failed to get meaning",
 			logging.Error(err),
 			logging.String("meaningID", meaningID.String()),
 		)
-		return fmt.Errorf("failed to find meaning: %w", err)
+		return fmt.Errorf("failed to get meaning: %w", err)
 	}
 
-	// Find the meaning
-	var foundMeaning *database.Meaning
-
-	for i := range entries {
-		entry := &entries[i]
-		for j := range entry.Meanings {
-			meaning := &entry.Meanings[j]
-			if meaning.ID == meaningID {
-				foundMeaning = meaning
-				break
-			}
-		}
-		if foundMeaning != nil {
-			break
-		}
-	}
-
-	if foundMeaning == nil {
-		return database.ErrEntryNotFound
-	}
-
-	// In a real implementation, you would:
-	// 1. Check if the user has already liked this meaning
-	// 2. If yes, remove the like
-	// 3. If no, add a new like
-	// 4. Update the likes count for the meaning
-
-	// Create or toggle like (would be saved to a database in a real implementation)
 	like := model.Like{
 		ID:         uuid.New(),
 		UserID:     userID,
@@ -586,7 +429,6 @@ func (s *entryService) ToggleMeaningLike(ctx context.Context, meaningID uuid.UUI
 		CreatedAt:  time.Now().UTC(),
 	}
 
-	// Placeholder for logging - in a real implementation, this would be saved
 	s.logger.Info("like processed",
 		logging.String("likeID", like.ID.String()),
 		logging.String("meaningID", meaningID.String()),

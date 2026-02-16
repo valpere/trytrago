@@ -146,6 +146,7 @@ TRYTRAGO_CACHE_ADDRESS=localhost:6380 INTEGRATION_TEST=true go test -v ./test/in
 3. **Use appropriate TTLs**: Set shorter TTLs for frequently changing data.
 4. **Log cache operations**: Log cache hits, misses, and errors for monitoring.
 5. **Graceful degradation**: The system should continue to function if Redis is unavailable.
+6. **Use SCAN for pattern matching**: Never use `KEYS` in production - use `SCAN` iterator instead (implemented in `Invalidate` method).
 
 ## Server Integration
 

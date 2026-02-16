@@ -396,6 +396,119 @@ func (r *dbrepo) FindTranslations(ctx context.Context, word string, langID strin
 	return translations, nil
 }
 
+// GetMeaningByID retrieves a meaning by ID with its related data
+func (r *dbrepo) GetMeaningByID(ctx context.Context, id uuid.UUID) (*database.Meaning, error) {
+	var meaning database.Meaning
+
+	result := r.db.WithContext(ctx).
+		Preload("Examples").
+		Preload("Translations").
+		First(&meaning, "id = ?", id)
+
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, database.ErrMeaningNotFound
+		}
+		return nil, database.NewDatabaseError(result.Error, "query", "meanings")
+	}
+
+	return &meaning, nil
+}
+
+// UpdateMeaning updates a meaning directly
+func (r *dbrepo) UpdateMeaning(ctx context.Context, meaning *database.Meaning) error {
+	meaning.UpdatedAt = time.Now().UTC()
+
+	result := r.db.WithContext(ctx).Save(meaning)
+	if result.Error != nil {
+		return database.NewDatabaseError(result.Error, "update", "meanings")
+	}
+
+	return nil
+}
+
+// DeleteMeaning deletes a meaning and its related data
+func (r *dbrepo) DeleteMeaning(ctx context.Context, id uuid.UUID) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Check if meaning exists
+		var count int64
+		if err := tx.Model(&database.Meaning{}).Where("id = ?", id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return database.ErrMeaningNotFound
+		}
+
+		// Delete translations
+		if err := tx.Where("meaning_id = ?", id).Delete(&database.Translation{}).Error; err != nil {
+			return err
+		}
+
+		// Delete examples
+		if err := tx.Where("meaning_id = ?", id).Delete(&database.Example{}).Error; err != nil {
+			return err
+		}
+
+		// Delete the meaning
+		if err := tx.Delete(&database.Meaning{}, "id = ?", id).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		if errors.Is(err, database.ErrMeaningNotFound) {
+			return err
+		}
+		return database.NewDatabaseError(err, "delete", "meanings")
+	}
+
+	return nil
+}
+
+// GetTranslationByID retrieves a translation by ID
+func (r *dbrepo) GetTranslationByID(ctx context.Context, id uuid.UUID) (*database.Translation, error) {
+	var translation database.Translation
+
+	result := r.db.WithContext(ctx).First(&translation, "id = ?", id)
+
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, database.ErrTranslationNotFound
+		}
+		return nil, database.NewDatabaseError(result.Error, "query", "translations")
+	}
+
+	return &translation, nil
+}
+
+// UpdateTranslation updates a translation directly
+func (r *dbrepo) UpdateTranslation(ctx context.Context, translation *database.Translation) error {
+	translation.UpdatedAt = time.Now().UTC()
+
+	result := r.db.WithContext(ctx).Save(translation)
+	if result.Error != nil {
+		return database.NewDatabaseError(result.Error, "update", "translations")
+	}
+
+	return nil
+}
+
+// DeleteTranslation deletes a translation
+func (r *dbrepo) DeleteTranslation(ctx context.Context, id uuid.UUID) error {
+	result := r.db.WithContext(ctx).Delete(&database.Translation{}, "id = ?", id)
+	if result.Error != nil {
+		return database.NewDatabaseError(result.Error, "delete", "translations")
+	}
+
+	if result.RowsAffected == 0 {
+		return database.ErrTranslationNotFound
+	}
+
+	return nil
+}
+
 func (r *dbrepo) RecordChange(ctx context.Context, change *database.ChangeHistory) error {
 	if change.ID == uuid.Nil {
 		change.ID = uuid.New()
